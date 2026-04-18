@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Premium 5 Radio Emulator</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Courier New', monospace;
+    background: #d8d8d8;
+    color: #222;
+    padding: 20px;
+}
+h1 {
+    color: #333;
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+.container {
+    max-width: 990px;
+    margin: 0 auto;
+}
+
+/* Radio faceplate */
+.radio-panel {
+    margin-bottom: 15px;
+}
+.radio-canvas {
+    width: 100%;
+    image-rendering: pixelated;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+/* Register bar */
+.reg-bar {
+    font-size: 13px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+/* Controls */
+.controls {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+.controls button {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 8px 20px;
+    margin-right: 8px;
+    background: #e0e0e0;
+    color: #333;
+    border: 1px solid #999;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.controls button:hover { background: #ccc; }
+.controls button:disabled { color: #aaa; border-color: #bbb; cursor: default; }
+.controls button:disabled:hover { background: #e0e0e0; }
+.status-text {
+    display: inline-block;
+    margin-left: 15px;
+    font-size: 14px;
+}
+.speed-control {
+    display: inline-block;
+    margin-left: auto;
+    font-size: 13px;
+    color: #666;
+    vertical-align: middle;
+}
+.speed-control input[type="range"] {
+    width: 120px;
+    vertical-align: middle;
+    margin: 0 6px;
+    accent-color: #999;
+}
+.status-running { color: #2a2; }
+.status-stopped { color: #c60; }
+
+/* Info panels */
+.info-row {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+.info-row .panel {
+    min-width: 0;
+}
+.panel {
+    background: #e8e8e8;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+/* Registers */
+.reg-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.reg-item {
+    font-size: 14px;
+}
+.reg-name { color: #666; }
+.reg-value { color: #1a6; }
+.flags {
+    margin-top: 10px;
+    font-size: 14px;
+}
+.flag-set { color: #1a6; font-weight: bold; }
+.flag-clear { color: #bbb; }
+
+/* Headings */
+.panel h2 {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.expand-btn {
+    font-size: 13px;
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+}
+.expand-btn:hover { color: #333; }
+
+/* Disassembly */
+.disasm-listing {
+    font-size: 13px;
+    line-height: 1.5;
+}
+.disasm-line { color: #333; }
+.disasm-line-current { color: #333; font-weight: bold; background: #c4d5e0; }
+.disasm-addr { color: #888; }
+.disasm-hex { color: #999; display: inline-block; width: 12ch; }
+.disasm-inst { }
+
+/* Listing view */
+.listing-view {
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    height: 400px;
+    scrollbar-width: none;
+}
+.listing-view::-webkit-scrollbar { display: none; }
+.listing-line, .listing-line-current { display: block; }
+.listing-line { color: #555; }
+.listing-line-current { color: #333; font-weight: bold; background: #c4d5e0; }
+
+/* Tabs */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 8px;
+}
+.tab-bar button {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 4px 12px;
+    background: transparent;
+    color: #888;
+    border: 1px solid #bbb;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    margin-right: -1px;
+}
+.tab-bar button.active {
+    background: #e8e8e8;
+    color: #333;
+    font-weight: bold;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-body {
+    height: 400px;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+/* RAM dump */
+.ram-dump {
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-y: scroll;
+    height: 100%;
+    white-space: pre;
+}
+.ram-addr { color: #888; }
+.ram-byte { color: #333; transition: background-color 1s; }
+.ram-ascii-byte { color: #1a6; transition: background-color 1s; }
+
+/* Status bar */
+.status-bar {
+    font-size: 13px;
+    color: #888;
+    margin-top: 5px;
+    text-align: center;
+}
+.cycles-value { color: #1a6; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="radio-panel">
+        <canvas class="radio-canvas" id="radio-canvas" width="860" height="270"></canvas>
+    </div>
+
+    <div class="reg-bar">
+        <span class="reg-name">PC </span><span class="reg-value" id="reg-pc2">0000</span>
+        <span class="reg-name">SP </span><span class="reg-value" id="reg-sp2">0000</span>
+        <span class="reg-name">AX </span><span class="reg-value" id="reg-ax2">0000</span>
+        <span class="reg-name">BC </span><span class="reg-value" id="reg-bc2">0000</span>
+        <span class="reg-name">DE </span><span class="reg-value" id="reg-de2">0000</span>
+        <span class="reg-name">HL </span><span class="reg-value" id="reg-hl2">0000</span>
+    </div>
+    <div class="reg-bar">
+        <span class="reg-name">PSW </span><span class="reg-value" id="reg-psw2">00</span>
+        <span id="rb-0" class="flag-clear">RB0</span>
+        <span id="rb-1" class="flag-clear">RB1</span>
+        <span id="rb-2" class="flag-clear">RB2</span>
+        <span id="rb-3" class="flag-clear">RB3</span>
+        <span id="flag-ie2" class="flag-clear">IE</span>
+        <span id="flag-isp2" class="flag-clear">ISP</span>
+        <span id="flag-z2" class="flag-clear">Z</span>
+        <span id="flag-ac2" class="flag-clear">AC</span>
+        <span id="flag-cy2" class="flag-clear">CY</span>
+    </div>
+
+    <div class="controls">
+        <button id="btn-start" onclick="sendCmd('start')">Run</button>
+        <button id="btn-stop" onclick="sendCmd('stop')" disabled>Stop</button>
+        <button id="btn-step" onclick="sendCmd('step')">Step</button>
+        <button id="btn-animate" onclick="toggleAnimate()">Animate</button>
+        <button id="btn-reset" onclick="sendCmd('reset')">Reset</button>
+        <span class="status-text status-stopped" id="status">STOPPED</span>
+        <span class="speed-control" id="animate-speed" style="display:none">
+            Speed <input type="range" id="speed-slider" min="50" max="500" step="50" value="200"
+                oninput="setAnimateSpeed(this.value)"><span id="speed-label">200ms</span>
+        </span>
+    </div>
+
+    <div class="info-row">
+        <div class="panel" id="panel-left">
+            <div class="tab-bar">
+                <button class="active" onclick="switchTab('hs-ram')">High-Speed RAM</button>
+                <button onclick="switchTab('exp-ram')">Expansion RAM</button>
+            </div>
+            <div class="tab-body">
+                <div class="tab-content active" id="tab-hs-ram">
+                    <div class="ram-dump" id="ram-hs"></div>
+                </div>
+                <div class="tab-content" id="tab-exp-ram">
+                    <div class="ram-dump" id="ram-exp"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-instructions">
+            <div class="panel-header">
+                <h2>Instructions</h2>
+                <button class="expand-btn" id="expand-btn" onclick="toggleExpand()">[+]</button>
+            </div>
+            <div class="disasm-listing" id="disasm-listing"></div>
+            <div class="listing-view" id="listing-view"></div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        Cycles: <span class="cycles-value" id="cycles">0</span>
+        | Simulated: <span class="cycles-value" id="sim-time">0.000</span>s
+        | Speed: <span class="cycles-value" id="speed-pct">0.0</span>% (actual: <span class="cycles-value" id="real-mhz">0.0</span> MHz, raw: <span class="cycles-value" id="potential-mhz">0.0</span> MHz)
+    </div>
+</div>
+
+<script>
+const ws = new WebSocket('ws://localhost:8765');
+let isRunning = false;
+let lstData = null;
+
+fetch('listing.json').then(r => r.json()).then(data => {
+    lstData = data;
+    console.log('Listing loaded:', data.lines.length, 'lines, keys:', Object.keys(data));
+}).catch(e => console.error('Failed to load listing:', e));
+
+function hex16(n) { return n.toString(16).toUpperCase().padStart(4, '0'); }
+function hex8(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
+
+const ramState = {};
+
+const BYTES_PER_ROW = 16;
+
+function initRam(id, size, baseAddr) {
+    const el = document.getElementById(id);
+    ramState[id] = { prev: null, baseAddr: baseAddr };
+    const lines = [];
+    for (let row = 0; row < size; row += BYTES_PER_ROW) {
+        let line = '<span class="ram-addr">' + hex16(baseAddr + row) + '</span>  ';
+        for (let col = 0; col < BYTES_PER_ROW && row + col < size; col++) {
+            line += '<span class="ram-byte" id="' + id + '-h-' + (row+col) + '">00</span> ';
+        }
+        line += ' ';
+        for (let col = 0; col < BYTES_PER_ROW && row + col < size; col++) {
+            line += '<span class="ram-ascii-byte" id="' + id + '-a-' + (row+col) + '">.</span>';
+        }
+        lines.push(line);
+    }
+    el.innerHTML = lines.join('\n');
+}
+
+function updateRam(id, hexStr) {
+    const st = ramState[id];
+    const prev = st.prev;
+    for (let i = 0; i < hexStr.length; i += 2) {
+        const byteIdx = i / 2;
+        const cur = hexStr.slice(i, i + 2);
+        if (prev !== null && cur !== prev.slice(i, i + 2)) {
+            const hSpan = document.getElementById(id + '-h-' + byteIdx);
+            const aSpan = document.getElementById(id + '-a-' + byteIdx);
+            // Update content
+            hSpan.textContent = cur;
+            const b = parseInt(cur, 16);
+            aSpan.textContent = (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.';
+            // Flash: reset transition, set bright, reflow, fade
+            hSpan.style.transition = 'none';
+            aSpan.style.transition = 'none';
+            hSpan.style.backgroundColor = '#fc0';
+            aSpan.style.backgroundColor = '#fc0';
+            hSpan.offsetHeight;
+            hSpan.style.transition = 'background-color 1s';
+            aSpan.style.transition = 'background-color 1s';
+            hSpan.style.backgroundColor = '';
+            aSpan.style.backgroundColor = '';
+        } else if (prev === null) {
+            // First update: set content without flash
+            const hSpan = document.getElementById(id + '-h-' + byteIdx);
+            const aSpan = document.getElementById(id + '-a-' + byteIdx);
+            hSpan.textContent = cur;
+            const b = parseInt(cur, 16);
+            aSpan.textContent = (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.';
+        }
+    }
+    st.prev = hexStr;
+}
+
+const IMG_W = 860;
+const IMG_H = 270;
+const radioCanvas = document.getElementById('radio-canvas');
+const radioCtx = radioCanvas.getContext('2d');
+const bgCanvas = document.createElement('canvas');
+bgCanvas.width = IMG_W;
+bgCanvas.height = IMG_H;
+const bgCtx = bgCanvas.getContext('2d');
+const bgImg = new Image();
+let bgReady = false;
+let lastState = null;
+bgImg.onload = function() {
+    bgCtx.drawImage(bgImg, 0, 0);
+    bgReady = true;
+    if (lastState) drawRadio(lastState.display_pixels, lastState.led);
+};
+bgImg.src = 'front.jpg';
+
+const HIT_REGIONS = [
+    // uPD16432B key scan buttons: [byte_index, bit_mask]
+    {name: 'mid',        x: 15,  y: 16,  w: 52,  h: 57,  key: [1, 0x40]},
+    {name: 'bass',       x: 15,  y: 77,  w: 52,  h: 57,  key: [1, 0x20]},
+    {name: 'treb',       x: 143, y: 16,  w: 57,  h: 57,  key: [1, 0x80]},
+    {name: 'fb',         x: 143, y: 77,  w: 57,  h: 57,  key: [1, 0x10]},
+    {name: 'tape_side',  x: 271, y: 39,  w: 59,  h: 60,  key: [1, 0x01]},
+    {name: 'seek_down',  x: 59,  y: 143, w: 65,  h: 54,  key: [2, 0x20]},
+    {name: 'seek_up',    x: 128, y: 143, w: 70,  h: 54,  key: [2, 0x40]},
+    {name: 'tune_down',  x: 659, y: 143, w: 69,  h: 55,  key: [3, 0x04]},
+    {name: 'tune_up',    x: 732, y: 143, w: 69,  h: 55,  key: [3, 0x02]},
+    {name: 'scan',       x: 711, y: 35,  w: 80,  h: 80,  key: [3, 0x08]},
+    {name: 'fm',         x: 659, y: 18,  w: 50,  h: 57,  key: [2, 0x80]},
+    {name: 'cd',         x: 659, y: 79,  w: 50,  h: 57,  key: [2, 0x08]},
+    {name: 'am',         x: 793, y: 18,  w: 54,  h: 56,  key: [3, 0x80]},
+    {name: 'tape',       x: 793, y: 78,  w: 54,  h: 57,  key: [1, 0x08]},
+    {name: 'preset_1',   x: 130, y: 213, w: 96,  h: 44,  key: [2, 0x04]},
+    {name: 'preset_2',   x: 230, y: 213, w: 96,  h: 44,  key: [2, 0x02]},
+    {name: 'preset_3',   x: 331, y: 213, w: 96,  h: 44,  key: [2, 0x01]},
+    {name: 'preset_4',   x: 432, y: 213, w: 96,  h: 44,  key: [3, 0x10]},
+    {name: 'preset_5',   x: 532, y: 213, w: 96,  h: 44,  key: [3, 0x20]},
+    {name: 'preset_6',   x: 632, y: 213, w: 97,  h: 44,  key: [3, 0x40]},
+    {name: 'mix',        x: 780, y: 213, w: 65,  h: 44,  key: [3, 0x01]},
+    // Non-uPD16432B controls (directly wired to GPIO or not buttons)
+    {name: 'power',      x: 16,  y: 213, w: 67,  h: 44},
+    // {name: 'stop_eject', x: 209, y: 39,  w: 59,  h: 60},
+    // {name: 'volume',     x: 69,  y: 34,  w: 72,  h: 82},
+    // {name: 'cassette',   x: 353, y: 39,  w: 298, h: 62},
+    // {name: 'lcd',        x: 230, y: 145, w: 400, h: 50},
+    // {name: 'alarm_led',  x: 96,  y: 224, w: 19,  h: 21},
+];
+
+let clickHighlight = null;
+let clickHighlightTimer = null;
+
+function hitTest(e) {
+    const scaleX = IMG_W / radioCanvas.clientWidth;
+    const scaleY = IMG_H / radioCanvas.clientHeight;
+    const nx = e.offsetX * scaleX;
+    const ny = e.offsetY * scaleY;
+    for (const r of HIT_REGIONS) {
+        if (nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h) {
+            return r;
+        }
+    }
+    return null;
+}
+
+let activeButton = null;
+
+radioCanvas.addEventListener('mousedown', function(e) {
+    const r = hitTest(e);
+    if (r) {
+        activeButton = r;
+        clickHighlight = {x: r.x, y: r.y, w: r.w, h: r.h, alpha: 1.0};
+        if (clickHighlightTimer) { clearInterval(clickHighlightTimer); clickHighlightTimer = null; }
+        if (lastState) drawRadio(lastState.display_pixels, lastState.led);
+        if (r.name === 'power') {
+            sendCmd('power_key');
+        } else if (r.key) {
+            ws.send(JSON.stringify({action: 'key_down', byte: r.key[0], mask: r.key[1]}));
+        }
+        console.log('Button down: ' + r.name);
+    }
+});
+
+window.addEventListener('mouseup', function(e) {
+    if (activeButton) {
+        if (activeButton.key) {
+            ws.send(JSON.stringify({action: 'key_up', byte: activeButton.key[0], mask: activeButton.key[1]}));
+        }
+        console.log('Button up: ' + activeButton.name);
+        activeButton = null;
+        if (clickHighlightTimer) clearInterval(clickHighlightTimer);
+        clickHighlightTimer = setInterval(function() {
+            clickHighlight.alpha -= 0.1;
+            if (clickHighlight.alpha <= 0) {
+                clickHighlight = null;
+                clearInterval(clickHighlightTimer);
+                clickHighlightTimer = null;
+            }
+            if (lastState) drawRadio(lastState.display_pixels, lastState.led);
+        }, 50);
+    }
+});
+
+const CHAR_COLS = 5;
+const CHAR_ROWS = 7;
+const LCD_FG = '#2d2d2d';
+const LCD_Y = 150;
+
+// small char: 5 cols * (3+1) - 1 = 19px wide
+// large char: 5 cols * (5+1) - 1 = 29px wide
+const CHARS = [
+    // group 1: mode/preset (small, 22px apart)
+    { x: 268, px: 3, color: LCD_FG },
+    { x: 290, px: 3, color: LCD_FG },
+    { x: 312, px: 3, color: LCD_FG },
+    { x: 334, px: 3, color: LCD_FG },
+    // group 2: freq integer (large, 33px apart)
+    { x: 362, px: 5, color: LCD_FG },
+    { x: 395, px: 5, color: LCD_FG },
+    { x: 428, px: 5, color: LCD_FG },
+    // group 3: freq decimal + unit (large, 33px apart)
+    { x: 468, px: 5, color: LCD_FG },
+    { x: 501, px: 5, color: LCD_FG },
+    { x: 534, px: 5, color: LCD_FG },
+    { x: 567, px: 5, color: LCD_FG },
+];
+
+const DOT = { x: 460, y: 185, size: 5 };
+
+const LED_X = 104;
+const LED_Y = 234;
+const LED_R = 4;
+
+function drawRadio(hexStr, ledOn) {
+    if (!bgReady) return;
+    radioCtx.drawImage(bgCanvas, 0, 0);
+
+    // LCD characters
+    const bigPx = 5;
+    const pxGap = 1;
+    const bigH = CHAR_ROWS * (bigPx + pxGap) - pxGap;
+    for (let ch = 0; ch < CHARS.length; ch++) {
+        const c = CHARS[ch];
+        const charH = CHAR_ROWS * (c.px + pxGap) - pxGap;
+        const yOff = LCD_Y + (bigH - charH);
+        radioCtx.fillStyle = c.color;
+        const byteBase = ch * CHAR_ROWS * 2;
+        for (let row = 0; row < CHAR_ROWS; row++) {
+            const byteIdx = byteBase + row * 2;
+            const byte = parseInt(hexStr.slice(byteIdx, byteIdx + 2), 16);
+            const pixels = byte & 0x1F;
+            for (let col = 0; col < CHAR_COLS; col++) {
+                if ((pixels >> (4 - col)) & 1) {
+                    radioCtx.fillRect(
+                        c.x + col * (c.px + pxGap),
+                        yOff + row * (c.px + pxGap),
+                        c.px, c.px);
+                }
+            }
+        }
+    }
+
+    // Decimal point pictograph (TODO: driven by pictograph RAM)
+    //radioCtx.fillStyle = LCD_FG;
+    //radioCtx.fillRect(DOT.x, DOT.y, DOT.size, DOT.size);
+
+    // Button click highlight
+    if (clickHighlight) {
+        radioCtx.strokeStyle = 'rgba(0, 200, 0, ' + clickHighlight.alpha + ')';
+        radioCtx.lineWidth = 3;
+        radioCtx.strokeRect(clickHighlight.x, clickHighlight.y,
+                            clickHighlight.w, clickHighlight.h);
+    }
+
+    // LED
+    if (ledOn) {
+        radioCtx.beginPath();
+        radioCtx.arc(LED_X, LED_Y, LED_R, 0, 2 * Math.PI);
+        radioCtx.fillStyle = '#ff3300';
+        radioCtx.fill();
+        radioCtx.shadowColor = '#ff3300';
+        radioCtx.shadowBlur = 10;
+        radioCtx.fill();
+        radioCtx.shadowBlur = 0;
+    }
+}
+
+function updateUI(state) {
+    // Display + LED
+    lastState = state;
+    drawRadio(state.display_pixels, state.led);
+
+    // Registers
+    document.getElementById('reg-pc2').textContent = hex16(state.pc);
+    document.getElementById('reg-sp2').textContent = hex16(state.sp);
+    document.getElementById('reg-ax2').textContent = hex16(state.ax);
+    document.getElementById('reg-bc2').textContent = hex16(state.bc);
+    document.getElementById('reg-de2').textContent = hex16(state.de);
+    document.getElementById('reg-hl2').textContent = hex16(state.hl);
+    document.getElementById('reg-psw2').textContent = hex8(state.psw);
+    for (let i = 0; i < 4; i++) {
+        document.getElementById('rb-' + i).className = (state.rb === i) ? 'flag-set' : 'flag-clear';
+    }
+
+    // Flags
+    for (const flag of ['ie', 'isp', 'z', 'ac', 'cy']) {
+        const el = document.getElementById('flag-' + flag + '2');
+        el.className = state[flag] ? 'flag-set' : 'flag-clear';
+    }
+
+    // Disassembly (20 history + 1 current = 21 lines)
+    const disasmListing = document.getElementById('disasm-listing');
+    const totalLines = 21;
+    const blanks = totalLines - state.disasm_history.length - 1;
+    const lines = [];
+    for (let i = 0; i < blanks; i++) {
+        lines.push('<div class="disasm-line">&nbsp;</div>');
+    }
+    state.disasm_history.forEach(line => {
+        lines.push('<div class="disasm-line">' +
+            '<span class="disasm-addr">' + hex16(line.addr) + '</span> ' +
+            '<span class="disasm-hex">' + line.hex + '</span> ' +
+            '<span class="disasm-inst">' + line.inst + '</span></div>');
+    });
+    const cur = state.disasm_current;
+    lines.push('<div class="disasm-line-current">' +
+        '<span class="disasm-addr">' + hex16(cur.addr) + '</span> ' +
+        '<span class="disasm-hex">' + cur.hex + '</span> ' +
+        '<span class="disasm-inst">' + cur.inst + '</span></div>');
+    disasmListing.innerHTML = lines.join('');
+
+    // Listing view (when expanded)
+    if (expanded) {
+        const listingEl = document.getElementById('listing-view');
+        try {
+            if (!lstData) {
+                listingEl.textContent = 'Loading listing...';
+            } else {
+                const addrKey = String(state.pc);
+                const targetLine = lstData.addr_to_line[addrKey];
+                if (targetLine) {
+                    const contextBefore = 20;
+                    const contextAfter = 40;
+                    const startLine = Math.max(1, targetLine - contextBefore);
+                    const endLine = Math.min(lstData.lines.length, targetLine + contextAfter);
+                    const html = [];
+                    for (let i = startLine; i <= endLine; i++) {
+                        const text = lstData.lines[i - 1];
+                        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                        const cls = (i === targetLine) ? 'listing-line-current' : 'listing-line';
+                        html.push('<span class="' + cls + '">' + escaped + '</span>');
+                    }
+                    listingEl.innerHTML = html.join('');
+                    const currentEl = listingEl.querySelector('.listing-line-current');
+                    if (currentEl) {
+                        currentEl.scrollIntoView({block: 'center', behavior: 'auto'});
+                    }
+                } else {
+                    listingEl.textContent = 'No listing for PC=0x' + hex16(state.pc);
+                }
+            }
+        } catch(e) {
+            listingEl.textContent = 'ERROR: ' + e.message;
+        }
+    }
+
+    // Cycles
+    document.getElementById('cycles').textContent = state.total_cycles.toLocaleString();
+    document.getElementById('sim-time').textContent = (state.total_cycles / 4190000).toFixed(3);
+    document.getElementById('speed-pct').textContent = (state.real_mhz / 4.19 * 100).toFixed(1);
+    document.getElementById('real-mhz').textContent = state.real_mhz.toFixed(2);
+    document.getElementById('potential-mhz').textContent = state.potential_mhz.toFixed(2);
+
+    // RAM
+    updateRam('ram-exp', state.exp_ram);
+    updateRam('ram-hs', state.hs_ram);
+
+    // Controls
+    isRunning = state.running;
+    document.getElementById('btn-start').disabled = isRunning;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('btn-step').disabled = false;
+    const statusEl = document.getElementById('status');
+    const statusText = isRunning ? 'RUNNING' : (animateTimer ? 'ANIMATE' : 'STOPPED');
+    const statusClass = (isRunning || animateTimer) ? 'status-running' : 'status-stopped';
+    statusEl.textContent = statusText;
+    statusEl.className = 'status-text ' + statusClass;
+}
+
+ws.onmessage = function(event) {
+    updateUI(JSON.parse(event.data));
+};
+
+ws.onopen = function() {
+    initRam('ram-exp', 2048, 0xF000);
+    initRam('ram-hs', 992, 0xFB00);
+    sendCmd('stop');
+};
+
+ws.onclose = function() {
+    document.getElementById('status').textContent = 'DISCONNECTED';
+    document.getElementById('status').className = 'status-text status-stopped';
+};
+
+function sendCmd(action) {
+    if ((action === 'start' || action === 'step') && animateTimer) {
+        stopAnimate();
+    }
+    if (action === 'stop' && animateTimer) {
+        stopAnimate();
+    }
+    if (action === 'step' && isRunning) {
+        ws.send(JSON.stringify({action: 'stop'}));
+    }
+    ws.send(JSON.stringify({action: action}));
+}
+
+function switchTab(name) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-bar button').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    event.target.classList.add('active');
+}
+
+let expanded = false;
+function toggleExpand() {
+    expanded = !expanded;
+    const left = document.getElementById('panel-left');
+    const row = document.querySelector('.info-row');
+    const btn = document.getElementById('expand-btn');
+    const disasmEl = document.getElementById('disasm-listing');
+    const listingEl = document.getElementById('listing-view');
+    const heading = document.querySelector('#panel-instructions h2');
+    if (expanded) {
+        left.style.display = 'none';
+        row.style.gridTemplateColumns = '1fr';
+        btn.textContent = '[-]';
+        disasmEl.style.display = 'none';
+        listingEl.style.display = 'block';
+        heading.textContent = 'Listing';
+    } else {
+        left.style.display = '';
+        row.style.gridTemplateColumns = '3fr 2fr';
+        btn.textContent = '[+]';
+        disasmEl.style.display = '';
+        listingEl.style.display = 'none';
+        heading.textContent = 'Instructions';
+    }
+    sendCmd('state');
+}
+
+let animateTimer = null;
+let animateMs = 200;
+
+function startAnimate() {
+    if (animateTimer) clearInterval(animateTimer);
+    animateTimer = setInterval(() => ws.send(JSON.stringify({action: 'step'})), animateMs);
+}
+
+function stopAnimate() {
+    if (animateTimer) {
+        clearInterval(animateTimer);
+        animateTimer = null;
+    }
+    document.getElementById('btn-animate').style.borderColor = '';
+    document.getElementById('animate-speed').style.display = 'none';
+}
+
+function toggleAnimate() {
+    if (animateTimer) return;
+    if (isRunning) sendCmd('stop');
+    startAnimate();
+    document.getElementById('btn-animate').style.borderColor = '#2a2';
+    document.getElementById('animate-speed').style.display = '';
+}
+
+function setAnimateSpeed(val) {
+    animateMs = parseInt(val);
+    document.getElementById('speed-label').textContent = animateMs + 'ms';
+    if (animateTimer) startAnimate();
+}
+</script>
+</body>
+</html>
