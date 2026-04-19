@@ -1,0 +1,212 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Courier New', monospace;
+    background: #d8d8d8;
+    color: #222;
+    padding: 20px;
+}
+h1 {
+    color: #333;
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+.container {
+    max-width: 990px;
+    margin: 0 auto;
+}
+
+/* Radio faceplate */
+.radio-panel {
+    margin-bottom: 15px;
+}
+.radio-canvas {
+    width: 100%;
+    image-rendering: pixelated;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+/* Register bar */
+.reg-bar {
+    font-size: 13px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+/* Controls */
+.controls {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+.controls button {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 8px 20px;
+    margin-right: 8px;
+    background: #e0e0e0;
+    color: #333;
+    border: 1px solid #999;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.controls button:hover { background: #ccc; }
+.controls button:disabled { color: #aaa; border-color: #bbb; cursor: default; }
+.controls button:disabled:hover { background: #e0e0e0; }
+.status-text {
+    display: inline-block;
+    margin-left: 15px;
+    font-size: 14px;
+}
+.speed-control {
+    display: inline-block;
+    margin-left: auto;
+    font-size: 13px;
+    color: #666;
+    vertical-align: middle;
+}
+.speed-control input[type="range"] {
+    width: 120px;
+    vertical-align: middle;
+    margin: 0 6px;
+    accent-color: #999;
+}
+.status-running { color: #2a2; }
+.status-stopped { color: #c60; }
+
+/* Info panels */
+.info-row {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+.info-row .panel {
+    min-width: 0;
+}
+.panel {
+    background: #e8e8e8;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+/* Registers */
+.reg-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.reg-item {
+    font-size: 14px;
+}
+.reg-name { color: #666; }
+.reg-value { color: #1a6; }
+.flags {
+    margin-top: 10px;
+    font-size: 14px;
+}
+.flag-set { color: #1a6; font-weight: bold; }
+.flag-clear { color: #bbb; }
+
+/* Headings */
+.panel h2 {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.expand-btn {
+    font-size: 13px;
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+}
+.expand-btn:hover { color: #333; }
+
+/* Disassembly */
+.disasm-listing {
+    font-size: 13px;
+    line-height: 1.5;
+}
+.disasm-line { color: #333; }
+.disasm-line-current { color: #333; font-weight: bold; background: #c4d5e0; }
+.disasm-addr { color: #888; }
+.disasm-hex { color: #999; display: inline-block; width: 12ch; }
+.disasm-inst { }
+
+/* Listing view */
+.listing-view {
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    height: 400px;
+    scrollbar-width: none;
+}
+.listing-view::-webkit-scrollbar { display: none; }
+.listing-line, .listing-line-current { display: block; }
+.listing-line { color: #555; }
+.listing-line-current { color: #333; font-weight: bold; background: #c4d5e0; }
+
+/* Tabs */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 8px;
+}
+.tab-bar button {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 4px 12px;
+    background: transparent;
+    color: #888;
+    border: 1px solid #bbb;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    margin-right: -1px;
+}
+.tab-bar button.active {
+    background: #e8e8e8;
+    color: #333;
+    font-weight: bold;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-body {
+    height: 400px;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+/* RAM dump */
+.ram-dump {
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-y: scroll;
+    height: 100%;
+    white-space: pre;
+}
+.ram-addr { color: #888; }
+.ram-byte { color: #333; transition: background-color 1s; }
+.ram-ascii-byte { color: #1a6; transition: background-color 1s; }
+
+/* Status bar */
+.status-bar {
+    font-size: 13px;
+    color: #888;
+    margin-top: 5px;
+    text-align: center;
+}
+.cycles-value { color: #1a6; }
