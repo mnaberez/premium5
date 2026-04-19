@@ -3,9 +3,9 @@ class Radio {
     static IMG_H = 311;
 
     static CHARS = [
-        { x: 309, px: 3 }, { x: 334, px: 3 }, { x: 359, px: 3 }, { x: 384, px: 3 },
-        { x: 417, px: 6 }, { x: 455, px: 6 }, { x: 493, px: 6 },
-        { x: 539, px: 6 }, { x: 577, px: 6 }, { x: 615, px: 6 }, { x: 653, px: 6 },
+        { x: 307, px: 3 }, { x: 332, px: 3 }, { x: 357, px: 3 }, { x: 382, px: 3 },
+        { x: 415, px: 6 }, { x: 453, px: 6 }, { x: 491, px: 6 },
+        { x: 537, px: 6 }, { x: 575, px: 6 }, { x: 613, px: 6 }, { x: 651, px: 6 },
     ];
 
     static CHAR_COLS = 5;
@@ -15,6 +15,13 @@ class Radio {
     static LED_X = 120;
     static LED_Y = 270;
     static LED_R = 5;
+
+    static PICTO_POSITIONS = {
+        dolby:  {x: 268, y: 172, w: 17, h: 12},
+        metal:  {x: 268, y: 207, w: 31, h: 12},
+        mix:    {x: 691, y: 207, w: 31, h: 12},
+        period: {x: 528, y: 214, w: 6,  h: 6},
+    };
 
     constructor(canvas) {
         this._canvas = canvas;
@@ -27,13 +34,29 @@ class Radio {
         this._highlight = null;
 
         this._onReady = null;
+        this._pictoImages = {};
+        const pictoNames = ['dolby', 'metal', 'mix', 'period'];
+        let loadCount = 0;
+        const totalLoads = 1 + pictoNames.length;
+        const checkReady = () => {
+            loadCount++;
+            if (loadCount >= totalLoads) {
+                this._bgReady = true;
+                if (this._onReady) this._onReady();
+            }
+        };
         const bgImg = new Image();
         bgImg.onload = () => {
             this._bgCtx.drawImage(bgImg, 0, 0);
-            this._bgReady = true;
-            if (this._onReady) this._onReady();
+            checkReady();
         };
         bgImg.src = 'images/faceplate-upscaled-990px.png';
+        for (const name of pictoNames) {
+            const img = new Image();
+            img.onload = checkReady;
+            img.src = 'images/pictograph-' + name + '.png';
+            this._pictoImages[name] = img;
+        }
     }
 
     setHighlight(h) {
@@ -69,6 +92,14 @@ class Radio {
                 }
             }
         }
+
+        // Pictographs (TODO: driven by pictograph RAM)
+        // for (const [name, pos] of Object.entries(Radio.PICTO_POSITIONS)) {
+        //     const img = this._pictoImages[name];
+        //     if (img && img.complete) {
+        //         ctx.drawImage(img, pos.x, pos.y, pos.w, pos.h);
+        //     }
+        // }
 
         if (this._highlight) {
             ctx.strokeStyle = 'rgba(0, 200, 0, ' + this._highlight.alpha + ')';

@@ -1,4 +1,12 @@
 class Input {
+    // uPD16432B pictograph RAM: {name, byte, bit}
+    static PICTOGRAPHS = [
+        {name: 'mix',         byte: 5, bit: 1},
+        {name: 'period',      byte: 4, bit: 5},
+        {name: 'tape_metal',  byte: 2, bit: 7},
+        {name: 'tape_dolby',  byte: 1, bit: 2},
+    ];
+
     static HIT_REGIONS = [
         // uPD16432B key scan buttons: [byte_index, bit_mask]
         {name: 'mid',        x: 17,  y: 18,  w: 60,  h: 64,  key: [1, 0x40]},
