@@ -1,71 +1,66 @@
-function createControls(conn) {
-    let isRunning = false;
-    let animateTimer = null;
-    let animateMs = 200;
-
-    function send(action) {
-        if ((action === 'start' || action === 'step') && animateTimer) {
-            stopAnimate();
-        }
-        if (action === 'stop' && animateTimer) {
-            stopAnimate();
-        }
-        if (action === 'step' && isRunning) {
-            conn.send('stop');
-        }
-        conn.send(action);
+class Controls {
+    constructor(conn) {
+        this._conn = conn;
+        this._isRunning = false;
+        this._animateTimer = null;
+        this._animateMs = 200;
     }
 
-    function startAnimate() {
-        if (animateTimer) clearInterval(animateTimer);
-        animateTimer = setInterval(() => conn.send('step'), animateMs);
-    }
-
-    function stopAnimate() {
-        if (animateTimer) {
-            clearInterval(animateTimer);
-            animateTimer = null;
+    send(action) {
+        if ((action === 'start' || action === 'step') && this._animateTimer) {
+            this._stopAnimate();
         }
-        document.getElementById('btn-animate').style.borderColor = '';
-        document.getElementById('animate-speed').style.display = 'none';
+        if (action === 'stop' && this._animateTimer) {
+            this._stopAnimate();
+        }
+        if (action === 'step' && this._isRunning) {
+            this._conn.send('stop');
+        }
+        this._conn.send(action);
     }
 
-    function toggleAnimate() {
-        if (animateTimer) return;
-        if (isRunning) conn.send('stop');
-        startAnimate();
+    toggleAnimate() {
+        if (this._animateTimer) return;
+        if (this._isRunning) this._conn.send('stop');
+        this._startAnimate();
         document.getElementById('btn-animate').style.borderColor = '#2a2';
         document.getElementById('animate-speed').style.display = '';
     }
 
-    function setAnimateSpeed(val) {
-        animateMs = parseInt(val);
-        document.getElementById('speed-label').textContent = animateMs + 'ms';
-        if (animateTimer) startAnimate();
+    setAnimateSpeed(val) {
+        this._animateMs = parseInt(val);
+        document.getElementById('speed-label').textContent = this._animateMs + 'ms';
+        if (this._animateTimer) this._startAnimate();
     }
 
-    function updateStatus(state) {
-        isRunning = state.running;
-        document.getElementById('btn-start').disabled = isRunning;
+    updateStatus(state) {
+        this._isRunning = state.running;
+        document.getElementById('btn-start').disabled = this._isRunning;
         document.getElementById('btn-stop').disabled = false;
         document.getElementById('btn-step').disabled = false;
         const statusEl = document.getElementById('status');
-        const statusText = isRunning ? 'RUNNING' : (animateTimer ? 'ANIMATE' : 'STOPPED');
-        const statusClass = (isRunning || animateTimer) ? 'status-running' : 'status-stopped';
+        const statusText = this._isRunning ? 'RUNNING' : (this._animateTimer ? 'ANIMATE' : 'STOPPED');
+        const statusClass = (this._isRunning || this._animateTimer) ? 'status-running' : 'status-stopped';
         statusEl.textContent = statusText;
         statusEl.className = 'status-text ' + statusClass;
     }
 
-    function setDisconnected() {
+    setDisconnected() {
         document.getElementById('status').textContent = 'DISCONNECTED';
         document.getElementById('status').className = 'status-text status-stopped';
     }
 
-    return {
-        send: send,
-        toggleAnimate: toggleAnimate,
-        setAnimateSpeed: setAnimateSpeed,
-        updateStatus: updateStatus,
-        setDisconnected: setDisconnected,
-    };
+    _startAnimate() {
+        if (this._animateTimer) clearInterval(this._animateTimer);
+        this._animateTimer = setInterval(() => this._conn.send('step'), this._animateMs);
+    }
+
+    _stopAnimate() {
+        if (this._animateTimer) {
+            clearInterval(this._animateTimer);
+            this._animateTimer = null;
+        }
+        document.getElementById('btn-animate').style.borderColor = '';
+        document.getElementById('animate-speed').style.display = 'none';
+    }
 }

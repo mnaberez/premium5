@@ -1,27 +1,69 @@
 function hex16(n) { return n.toString(16).toUpperCase().padStart(4, '0'); }
 function hex8(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
 
-function createDebugger() {
-    const BYTES_PER_ROW = 16;
-    const ramState = {};
-    let lstData = null;
-    let expanded = false;
+class Debugger {
+    static BYTES_PER_ROW = 16;
 
-    fetch('listing.json').then(r => r.json()).then(data => {
-        lstData = data;
-    }).catch(e => console.error('Failed to load listing:', e));
+    constructor() {
+        this._ramState = {};
+        this._lstData = null;
+        this._expanded = false;
 
-    function initRam(id, size, baseAddr) {
+        fetch('listing.json').then(r => r.json()).then(data => {
+            this._lstData = data;
+        }).catch(e => console.error('Failed to load listing:', e));
+    }
+
+    init() {
+        this._initRam('ram-exp', 2048, 0xF000);
+        this._initRam('ram-hs', 992, 0xFB00);
+    }
+
+    update(state) {
+        this._updateRegisters(state);
+        this._updateDisassembly(state);
+        this._updateListing(state);
+        this._updateCycles(state);
+        this._updateRam('ram-exp', state.exp_ram);
+        this._updateRam('ram-hs', state.hs_ram);
+    }
+
+    toggleExpand() {
+        this._expanded = !this._expanded;
+        const left = document.getElementById('panel-left');
+        const row = document.querySelector('.info-row');
+        const btn = document.getElementById('expand-btn');
+        const disasmEl = document.getElementById('disasm-listing');
+        const listingEl = document.getElementById('listing-view');
+        const heading = document.querySelector('#panel-instructions h2');
+        if (this._expanded) {
+            left.style.display = 'none';
+            row.style.gridTemplateColumns = '1fr';
+            btn.textContent = '[-]';
+            disasmEl.style.display = 'none';
+            listingEl.style.display = 'block';
+            heading.textContent = 'Listing';
+        } else {
+            left.style.display = '';
+            row.style.gridTemplateColumns = '3fr 2fr';
+            btn.textContent = '[+]';
+            disasmEl.style.display = '';
+            listingEl.style.display = 'none';
+            heading.textContent = 'Instructions';
+        }
+    }
+
+    _initRam(id, size, baseAddr) {
         const el = document.getElementById(id);
-        ramState[id] = { prev: null };
+        this._ramState[id] = { prev: null };
         const lines = [];
-        for (let row = 0; row < size; row += BYTES_PER_ROW) {
+        for (let row = 0; row < size; row += Debugger.BYTES_PER_ROW) {
             let line = '<span class="ram-addr">' + hex16(baseAddr + row) + '</span>  ';
-            for (let col = 0; col < BYTES_PER_ROW && row + col < size; col++) {
+            for (let col = 0; col < Debugger.BYTES_PER_ROW && row + col < size; col++) {
                 line += '<span class="ram-byte" id="' + id + '-h-' + (row+col) + '">00</span> ';
             }
             line += ' ';
-            for (let col = 0; col < BYTES_PER_ROW && row + col < size; col++) {
+            for (let col = 0; col < Debugger.BYTES_PER_ROW && row + col < size; col++) {
                 line += '<span class="ram-ascii-byte" id="' + id + '-a-' + (row+col) + '">.</span>';
             }
             lines.push(line);
@@ -29,8 +71,8 @@ function createDebugger() {
         el.innerHTML = lines.join('\n');
     }
 
-    function updateRam(id, hexStr) {
-        const st = ramState[id];
+    _updateRam(id, hexStr) {
+        const st = this._ramState[id];
         const prev = st.prev;
         for (let i = 0; i < hexStr.length; i += 2) {
             const byteIdx = i / 2;
@@ -61,7 +103,7 @@ function createDebugger() {
         st.prev = hexStr;
     }
 
-    function updateRegisters(state) {
+    _updateRegisters(state) {
         document.getElementById('reg-pc2').textContent = hex16(state.pc);
         document.getElementById('reg-sp2').textContent = hex16(state.sp);
         document.getElementById('reg-ax2').textContent = hex16(state.ax);
@@ -73,13 +115,12 @@ function createDebugger() {
             document.getElementById('rb-' + i).className = (state.rb === i) ? 'flag-set' : 'flag-clear';
         }
         for (const flag of ['ie', 'isp', 'z', 'ac', 'cy']) {
-            const el = document.getElementById('flag-' + flag + '2');
-            el.className = state[flag] ? 'flag-set' : 'flag-clear';
+            document.getElementById('flag-' + flag + '2').className = state[flag] ? 'flag-set' : 'flag-clear';
         }
     }
 
-    function updateDisassembly(state) {
-        const disasmListing = document.getElementById('disasm-listing');
+    _updateDisassembly(state) {
+        const el = document.getElementById('disasm-listing');
         const totalLines = 21;
         const blanks = totalLines - state.disasm_history.length - 1;
         const lines = [];
@@ -97,91 +138,46 @@ function createDebugger() {
             '<span class="disasm-addr">' + hex16(cur.addr) + '</span> ' +
             '<span class="disasm-hex">' + cur.hex + '</span> ' +
             '<span class="disasm-inst">' + cur.inst + '</span></div>');
-        disasmListing.innerHTML = lines.join('');
+        el.innerHTML = lines.join('');
     }
 
-    function updateListing(state) {
-        if (!expanded) return;
-        const listingEl = document.getElementById('listing-view');
+    _updateListing(state) {
+        if (!this._expanded) return;
+        const el = document.getElementById('listing-view');
         try {
-            if (!lstData) {
-                listingEl.textContent = 'Loading listing...';
+            if (!this._lstData) {
+                el.textContent = 'Loading listing...';
             } else {
-                const targetLine = lstData.addr_to_line[String(state.pc)];
+                const targetLine = this._lstData.addr_to_line[String(state.pc)];
                 if (targetLine) {
                     const startLine = Math.max(1, targetLine - 20);
-                    const endLine = Math.min(lstData.lines.length, targetLine + 40);
+                    const endLine = Math.min(this._lstData.lines.length, targetLine + 40);
                     const html = [];
                     for (let i = startLine; i <= endLine; i++) {
-                        const text = lstData.lines[i - 1];
+                        const text = this._lstData.lines[i - 1];
                         const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
                         const cls = (i === targetLine) ? 'listing-line-current' : 'listing-line';
                         html.push('<span class="' + cls + '">' + escaped + '</span>');
                     }
-                    listingEl.innerHTML = html.join('');
-                    const currentEl = listingEl.querySelector('.listing-line-current');
+                    el.innerHTML = html.join('');
+                    const currentEl = el.querySelector('.listing-line-current');
                     if (currentEl) {
                         currentEl.scrollIntoView({block: 'center', behavior: 'auto'});
                     }
                 } else {
-                    listingEl.textContent = 'No listing for PC=0x' + hex16(state.pc);
+                    el.textContent = 'No listing for PC=0x' + hex16(state.pc);
                 }
             }
         } catch(e) {
-            listingEl.textContent = 'ERROR: ' + e.message;
+            el.textContent = 'ERROR: ' + e.message;
         }
     }
 
-    function updateCycles(state) {
+    _updateCycles(state) {
         document.getElementById('cycles').textContent = state.total_cycles.toLocaleString();
         document.getElementById('sim-time').textContent = (state.total_cycles / 4190000).toFixed(3);
         document.getElementById('speed-pct').textContent = (state.real_mhz / 4.19 * 100).toFixed(1);
         document.getElementById('real-mhz').textContent = state.real_mhz.toFixed(2);
         document.getElementById('potential-mhz').textContent = state.potential_mhz.toFixed(2);
     }
-
-    function toggleExpand() {
-        expanded = !expanded;
-        const left = document.getElementById('panel-left');
-        const row = document.querySelector('.info-row');
-        const btn = document.getElementById('expand-btn');
-        const disasmEl = document.getElementById('disasm-listing');
-        const listingEl = document.getElementById('listing-view');
-        const heading = document.querySelector('#panel-instructions h2');
-        if (expanded) {
-            left.style.display = 'none';
-            row.style.gridTemplateColumns = '1fr';
-            btn.textContent = '[-]';
-            disasmEl.style.display = 'none';
-            listingEl.style.display = 'block';
-            heading.textContent = 'Listing';
-        } else {
-            left.style.display = '';
-            row.style.gridTemplateColumns = '3fr 2fr';
-            btn.textContent = '[+]';
-            disasmEl.style.display = '';
-            listingEl.style.display = 'none';
-            heading.textContent = 'Instructions';
-        }
-    }
-
-    function update(state) {
-        updateRegisters(state);
-        updateDisassembly(state);
-        updateListing(state);
-        updateCycles(state);
-        updateRam('ram-exp', state.exp_ram);
-        updateRam('ram-hs', state.hs_ram);
-    }
-
-    function init() {
-        initRam('ram-exp', 2048, 0xF000);
-        initRam('ram-hs', 992, 0xFB00);
-    }
-
-    return {
-        init: init,
-        update: update,
-        toggleExpand: toggleExpand,
-    };
 }
