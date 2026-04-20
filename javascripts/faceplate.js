@@ -1,4 +1,4 @@
-class Radio {
+class Faceplate {
     static IMG_W = 990;
     static IMG_H = 311;
 
@@ -27,11 +27,10 @@ class Radio {
         this._canvas = canvas;
         this._ctx = canvas.getContext('2d');
         this._bgCanvas = document.createElement('canvas');
-        this._bgCanvas.width = Radio.IMG_W;
-        this._bgCanvas.height = Radio.IMG_H;
+        this._bgCanvas.width = Faceplate.IMG_W;
+        this._bgCanvas.height = Faceplate.IMG_H;
         this._bgCtx = this._bgCanvas.getContext('2d');
         this._bgReady = false;
-        this._highlight = null;
 
         this._onReady = null;
         this._pictoImages = {};
@@ -59,8 +58,10 @@ class Radio {
         }
     }
 
-    setHighlight(h) {
-        this._highlight = h;
+    get ctx() { return this._ctx; }
+
+    requestRedraw() {
+        if (this._onRedraw) this._onRedraw();
     }
 
     draw(hexStr, ledOn) {
@@ -70,19 +71,19 @@ class Radio {
 
         const bigPx = 6;
         const pxGap = 1;
-        const bigH = Radio.CHAR_ROWS * (bigPx + pxGap) - pxGap;
-        ctx.fillStyle = Radio.LCD_FG;
+        const bigH = Faceplate.CHAR_ROWS * (bigPx + pxGap) - pxGap;
+        ctx.fillStyle = Faceplate.LCD_FG;
 
-        for (let ch = 0; ch < Radio.CHARS.length; ch++) {
-            const c = Radio.CHARS[ch];
-            const charH = Radio.CHAR_ROWS * (c.px + pxGap) - pxGap;
-            const yOff = Radio.LCD_Y + (bigH - charH);
-            const byteBase = ch * Radio.CHAR_ROWS * 2;
-            for (let row = 0; row < Radio.CHAR_ROWS; row++) {
+        for (let ch = 0; ch < Faceplate.CHARS.length; ch++) {
+            const c = Faceplate.CHARS[ch];
+            const charH = Faceplate.CHAR_ROWS * (c.px + pxGap) - pxGap;
+            const yOff = Faceplate.LCD_Y + (bigH - charH);
+            const byteBase = ch * Faceplate.CHAR_ROWS * 2;
+            for (let row = 0; row < Faceplate.CHAR_ROWS; row++) {
                 const byteIdx = byteBase + row * 2;
                 const byte = parseInt(hexStr.slice(byteIdx, byteIdx + 2), 16);
                 const pixels = byte & 0x1F;
-                for (let col = 0; col < Radio.CHAR_COLS; col++) {
+                for (let col = 0; col < Faceplate.CHAR_COLS; col++) {
                     if ((pixels >> (4 - col)) & 1) {
                         ctx.fillRect(
                             c.x + col * (c.px + pxGap),
@@ -94,23 +95,16 @@ class Radio {
         }
 
         // Pictographs (TODO: driven by pictograph RAM)
-        // for (const [name, pos] of Object.entries(Radio.PICTO_POSITIONS)) {
+        // for (const [name, pos] of Object.entries(Faceplate.PICTO_POSITIONS)) {
         //     const img = this._pictoImages[name];
         //     if (img && img.complete) {
         //         ctx.drawImage(img, pos.x, pos.y, pos.w, pos.h);
         //     }
         // }
 
-        if (this._highlight) {
-            ctx.strokeStyle = 'rgba(0, 200, 0, ' + this._highlight.alpha + ')';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(this._highlight.x, this._highlight.y,
-                           this._highlight.w, this._highlight.h);
-        }
-
         if (ledOn) {
             ctx.beginPath();
-            ctx.arc(Radio.LED_X, Radio.LED_Y, Radio.LED_R, 0, 2 * Math.PI);
+            ctx.arc(Faceplate.LED_X, Faceplate.LED_Y, Faceplate.LED_R, 0, 2 * Math.PI);
             ctx.fillStyle = '#ff3300';
             ctx.fill();
             ctx.shadowColor = '#ff3300';

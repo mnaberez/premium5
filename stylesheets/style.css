@@ -16,10 +16,10 @@ h1 {
 }
 
 /* Radio faceplate */
-.radio-panel {
+.faceplate-panel {
     margin-bottom: 15px;
 }
-.radio-canvas {
+.faceplate-canvas {
     width: 100%;
     image-rendering: pixelated;
     border-radius: 8px;

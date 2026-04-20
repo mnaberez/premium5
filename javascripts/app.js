@@ -1,21 +1,25 @@
 document.addEventListener('DOMContentLoaded', function() {
 
-const radioCanvas = document.getElementById('radio-canvas');
-const radio = new Radio(radioCanvas);
-radio._onReady = function() { redraw(); };
+const faceplateCanvas = document.getElementById('faceplate-canvas');
+const faceplate = new Faceplate(faceplateCanvas);
 const dbg = new Debugger();
 
 let lastState = null;
-let highlightTimer = null;
 
 function redraw() {
-    if (lastState) radio.draw(lastState.displayPixels, lastState.led);
+    if (lastState) {
+        faceplate.draw(lastState.displayPixels, lastState.led);
+        input.drawButtons();
+    }
 }
+
+faceplate._onReady = redraw;
+faceplate._onRedraw = redraw;
 
 const conn = new Connection('ws://localhost:8765');
 conn.onStateReceived = function(state) {
     lastState = state;
-    radio.draw(state.displayPixels, state.led);
+    redraw();
     dbg.update(state);
     controls.updateStatus(state);
 };
@@ -28,39 +32,7 @@ conn.onClose = function() {
 };
 
 const controls = new Controls(conn);
-
-new Input(radioCanvas, Radio.IMG_W, Radio.IMG_H,
-    function onDown(r) {
-        radio.setHighlight({x: r.x, y: r.y, w: r.w, h: r.h, alpha: 1.0});
-        if (highlightTimer) { clearInterval(highlightTimer); highlightTimer = null; }
-        redraw();
-
-        if (r.name === 'power') {
-            conn.powerKey();
-        } else if (r.key) {
-            conn.keyDown(r.key[0], r.key[1]);
-        }
-    },
-    function onUp(r) {
-        if (r.key) {
-            conn.keyUp(r.key[0], r.key[1]);
-        }
-
-        let alpha = 1.0;
-        if (highlightTimer) clearInterval(highlightTimer);
-        highlightTimer = setInterval(function() {
-            alpha -= 0.1;
-            if (alpha <= 0) {
-                radio.setHighlight(null);
-                clearInterval(highlightTimer);
-                highlightTimer = null;
-            } else {
-                radio.setHighlight({x: r.x, y: r.y, w: r.w, h: r.h, alpha: alpha});
-            }
-            redraw();
-        }, 50);
-    }
-);
+const input = new Input(faceplateCanvas, faceplate, conn);
 
 // Expose globals for inline onclick handlers in HTML
 window.sendCmd = function(action) { controls[action](); };

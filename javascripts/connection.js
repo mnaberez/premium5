@@ -8,6 +8,7 @@
 //
 // All server responses are the same EmulatorState object — there
 // are no other message types.
+
 class Connection {
     constructor(url) {
         this.onStateReceived = null;  // called with EmulatorState on each server push
@@ -49,10 +50,20 @@ class Connection {
     state()     { this._send('state'); }
     speed(val)  { this._send('speed', {value: val}); }
 
-    // Radio input
-    powerKey()  { this._send('power_key'); }
-    keyDown(byte, mask) { this._send('key_down', {byte: byte, mask: mask}); }
-    keyUp(byte, mask)   { this._send('key_up', {byte: byte, mask: mask}); }
+    // Faceplate button input
+    buttonDown(buttonCode) {
+        if (buttonCode.type === 'key') {
+            this._send('key_down', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
+        } else if (buttonCode.name === 'power') {
+            this._send('power_key');
+        }
+    }
+
+    buttonUp(buttonCode) {
+        if (buttonCode.type === 'key') {
+            this._send('key_up', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
+        }
+    }
 }
 
 // Hydrated from the JSON state object pushed by the server.
@@ -90,7 +101,7 @@ class EmulatorState {
         this.disasmHistory = data.disasm_history;
         this.disasmCurrent = data.disasm_current;
 
-        // Radio hardware
+        // Faceplate hardware
         this.displayPixels = data.display_pixels;
         this.led = data.led;
         this.t30 = data.t30;
@@ -98,5 +109,44 @@ class EmulatorState {
         // RAM dumps
         this.expRam = data.exp_ram;
         this.hsRam = data.hs_ram;
+    }
+}
+
+// Identifies a faceplate button.  The Connection translates these
+// into the appropriate server commands (uPD16432B key scan codes
+// for most buttons, GPIO for power and stop/eject).
+class ButtonCode {
+    // uPD16432B key scan buttons
+    static MID       = new ButtonCode('mid',       'key', 1, 0x40);
+    static BASS      = new ButtonCode('bass',      'key', 1, 0x20);
+    static TREB      = new ButtonCode('treb',      'key', 1, 0x80);
+    static FB        = new ButtonCode('fb',        'key', 1, 0x10);
+    static TAPE_SIDE = new ButtonCode('tape_side', 'key', 1, 0x01);
+    static SEEK_DOWN = new ButtonCode('seek_down', 'key', 2, 0x20);
+    static SEEK_UP   = new ButtonCode('seek_up',   'key', 2, 0x40);
+    static TUNE_DOWN = new ButtonCode('tune_down', 'key', 3, 0x04);
+    static TUNE_UP   = new ButtonCode('tune_up',   'key', 3, 0x02);
+    static SCAN      = new ButtonCode('scan',      'key', 3, 0x08);
+    static FM        = new ButtonCode('fm',        'key', 2, 0x80);
+    static CD        = new ButtonCode('cd',        'key', 2, 0x08);
+    static AM        = new ButtonCode('am',        'key', 3, 0x80);
+    static TAPE      = new ButtonCode('tape',      'key', 1, 0x08);
+    static PRESET_1  = new ButtonCode('preset_1',  'key', 2, 0x04);
+    static PRESET_2  = new ButtonCode('preset_2',  'key', 2, 0x02);
+    static PRESET_3  = new ButtonCode('preset_3',  'key', 2, 0x01);
+    static PRESET_4  = new ButtonCode('preset_4',  'key', 3, 0x10);
+    static PRESET_5  = new ButtonCode('preset_5',  'key', 3, 0x20);
+    static PRESET_6  = new ButtonCode('preset_6',  'key', 3, 0x40);
+    static MIX       = new ButtonCode('mix',       'key', 3, 0x01);
+
+    // GPIO buttons (directly wired, not scanned by uPD16432B)
+    static POWER     = new ButtonCode('power',      'gpio');
+    static STOP_EJECT = new ButtonCode('stop_eject', 'gpio');
+
+    constructor(name, type, upd_byte, upd_mask) {
+        this.name = name;
+        this.type = type;
+        this.upd_byte = upd_byte;
+        this.upd_mask = upd_mask;
     }
 }
