@@ -17,13 +17,23 @@ h1 {
 
 /* Radio faceplate */
 .faceplate-panel {
+    position: relative;
     margin-bottom: 15px;
 }
-.faceplate-canvas {
+.faceplate-img {
     width: 100%;
-    image-rendering: pixelated;
+    display: block;
     border-radius: 8px;
     border: 1px solid #ccc;
+}
+.faceplate-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    border-radius: 8px;
 }
 
 /* Register bar */

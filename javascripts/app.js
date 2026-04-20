@@ -1,25 +1,15 @@
 document.addEventListener('DOMContentLoaded', function() {
 
+const faceplateImg = document.querySelector('.faceplate-img');
 const faceplateCanvas = document.getElementById('faceplate-canvas');
-const faceplate = new Faceplate(faceplateCanvas);
+const faceplate = new Faceplate(faceplateImg, faceplateCanvas);
 const dbg = new Debugger();
-
-let lastState = null;
-
-function redraw() {
-    if (lastState) {
-        faceplate.draw(lastState.displayPixels, lastState.led);
-        input.drawButtons();
-    }
-}
-
-faceplate._onReady = redraw;
-faceplate._onRedraw = redraw;
 
 const conn = new Connection('ws://localhost:8765');
 conn.onStateReceived = function(state) {
-    lastState = state;
-    redraw();
+    faceplate.lcd.draw(state.displayPixels);
+    faceplate.alarmLED.draw(state.led);
+    if (state.running) { faceplate.enable(); } else { faceplate.disable(); }
     dbg.update(state);
     controls.updateStatus(state);
 };
@@ -32,7 +22,8 @@ conn.onClose = function() {
 };
 
 const controls = new Controls(conn);
-const input = new Input(faceplateCanvas, faceplate, conn);
+faceplate.onButtonDown = function(buttonCode) { conn.buttonDown(buttonCode); };
+faceplate.onButtonUp = function(buttonCode) { conn.buttonUp(buttonCode); };
 
 // Expose globals for inline onclick handlers in HTML
 window.sendCmd = function(action) { controls[action](); };
