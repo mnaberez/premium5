@@ -24,8 +24,8 @@ class Debugger {
         this._updateDisassembly(state);
         this._updateListing(state);
         this._updateCycles(state);
-        this._updateRam('ram-exp', state.exp_ram);
-        this._updateRam('ram-hs', state.hs_ram);
+        this._updateRam('ram-exp', state.expRam);
+        this._updateRam('ram-hs', state.hsRam);
     }
 
     toggleExpand() {
@@ -122,18 +122,18 @@ class Debugger {
     _updateDisassembly(state) {
         const el = document.getElementById('disasm-listing');
         const totalLines = 21;
-        const blanks = totalLines - state.disasm_history.length - 1;
+        const blanks = totalLines - state.disasmHistory.length - 1;
         const lines = [];
         for (let i = 0; i < blanks; i++) {
             lines.push('<div class="disasm-line">&nbsp;</div>');
         }
-        state.disasm_history.forEach(line => {
+        state.disasmHistory.forEach(line => {
             lines.push('<div class="disasm-line">' +
                 '<span class="disasm-addr">' + hex16(line.addr) + '</span> ' +
                 '<span class="disasm-hex">' + line.hex + '</span> ' +
                 '<span class="disasm-inst">' + line.inst + '</span></div>');
         });
-        const cur = state.disasm_current;
+        const cur = state.disasmCurrent;
         lines.push('<div class="disasm-line-current">' +
             '<span class="disasm-addr">' + hex16(cur.addr) + '</span> ' +
             '<span class="disasm-hex">' + cur.hex + '</span> ' +
@@ -174,10 +174,10 @@ class Debugger {
     }
 
     _updateCycles(state) {
-        document.getElementById('cycles').textContent = state.total_cycles.toLocaleString();
-        document.getElementById('sim-time').textContent = (state.total_cycles / 4190000).toFixed(3);
-        document.getElementById('speed-pct').textContent = (state.real_mhz / 4.19 * 100).toFixed(1);
-        document.getElementById('real-mhz').textContent = state.real_mhz.toFixed(2);
-        document.getElementById('potential-mhz').textContent = state.potential_mhz.toFixed(2);
+        document.getElementById('cycles').textContent = state.totalCycles.toLocaleString();
+        document.getElementById('sim-time').textContent = (state.totalCycles / 4190000).toFixed(3);
+        document.getElementById('speed-pct').textContent = (state.realMhz / 4.19 * 100).toFixed(1);
+        document.getElementById('real-mhz').textContent = state.realMhz.toFixed(2);
+        document.getElementById('potential-mhz').textContent = state.potentialMhz.toFixed(2);
     }
 }

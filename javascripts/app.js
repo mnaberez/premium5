@@ -9,24 +9,23 @@ let lastState = null;
 let highlightTimer = null;
 
 function redraw() {
-    if (lastState) radio.draw(lastState.display_pixels, lastState.led);
+    if (lastState) radio.draw(lastState.displayPixels, lastState.led);
 }
 
-const conn = new Connection('ws://localhost:8765',
-    function onState(state) {
-        lastState = state;
-        radio.draw(state.display_pixels, state.led);
-        dbg.update(state);
-        controls.updateStatus(state);
-    },
-    function onOpen() {
-        dbg.init();
-        controls.send('stop');
-    },
-    function onClose() {
-        controls.setDisconnected();
-    }
-);
+const conn = new Connection('ws://localhost:8765');
+conn.onStateReceived = function(state) {
+    lastState = state;
+    radio.draw(state.displayPixels, state.led);
+    dbg.update(state);
+    controls.updateStatus(state);
+};
+conn.onOpen = function() {
+    dbg.init();
+    controls.stop();
+};
+conn.onClose = function() {
+    controls.setDisconnected();
+};
 
 const controls = new Controls(conn);
 
@@ -37,14 +36,14 @@ new Input(radioCanvas, Radio.IMG_W, Radio.IMG_H,
         redraw();
 
         if (r.name === 'power') {
-            controls.send('power_key');
+            conn.powerKey();
         } else if (r.key) {
-            conn.send('key_down', {byte: r.key[0], mask: r.key[1]});
+            conn.keyDown(r.key[0], r.key[1]);
         }
     },
     function onUp(r) {
         if (r.key) {
-            conn.send('key_up', {byte: r.key[0], mask: r.key[1]});
+            conn.keyUp(r.key[0], r.key[1]);
         }
 
         let alpha = 1.0;
@@ -64,10 +63,10 @@ new Input(radioCanvas, Radio.IMG_W, Radio.IMG_H,
 );
 
 // Expose globals for inline onclick handlers in HTML
-window.sendCmd = function(action) { controls.send(action); };
+window.sendCmd = function(action) { controls[action](); };
 window.toggleAnimate = function() { controls.toggleAnimate(); };
 window.setAnimateSpeed = function(val) { controls.setAnimateSpeed(val); };
-window.toggleExpand = function() { dbg.toggleExpand(); sendCmd('state'); };
+window.toggleExpand = function() { dbg.toggleExpand(); controls.state(); };
 window.switchTab = function(name) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-bar button').forEach(el => el.classList.remove('active'));

@@ -6,22 +6,34 @@ class Controls {
         this._animateMs = 200;
     }
 
-    send(action) {
-        if ((action === 'start' || action === 'step') && this._animateTimer) {
-            this._stopAnimate();
-        }
-        if (action === 'stop' && this._animateTimer) {
-            this._stopAnimate();
-        }
-        if (action === 'step' && this._isRunning) {
-            this._conn.send('stop');
-        }
-        this._conn.send(action);
+    start() {
+        if (this._animateTimer) this._stopAnimate();
+        this._conn.start();
+    }
+
+    stop() {
+        if (this._animateTimer) this._stopAnimate();
+        this._conn.stop();
+    }
+
+    step() {
+        if (this._animateTimer) this._stopAnimate();
+        if (this._isRunning) this._conn.stop();
+        this._conn.step();
+    }
+
+    reset() {
+        if (this._animateTimer) this._stopAnimate();
+        this._conn.reset();
+    }
+
+    state() {
+        this._conn.state();
     }
 
     toggleAnimate() {
         if (this._animateTimer) return;
-        if (this._isRunning) this._conn.send('stop');
+        if (this._isRunning) this._conn.stop();
         this._startAnimate();
         document.getElementById('btn-animate').style.borderColor = '#2a2';
         document.getElementById('animate-speed').style.display = '';
@@ -52,7 +64,7 @@ class Controls {
 
     _startAnimate() {
         if (this._animateTimer) clearInterval(this._animateTimer);
-        this._animateTimer = setInterval(() => this._conn.send('step'), this._animateMs);
+        this._animateTimer = setInterval(() => this._conn.step(), this._animateMs);
     }
 
     _stopAnimate() {
