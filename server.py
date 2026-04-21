@@ -27,11 +27,30 @@ from k0emu.system import make_processor, populate_eeprom, patch_rom, configure_i
 from k0emu.processor import RegisterPairs, Flags
 
 
-class Emulator:
-    LISTING_CONTEXT_BEFORE = 20
-    LISTING_CONTEXT_AFTER = 40
+class Listing:
+    CONTEXT_BEFORE = 20
+    CONTEXT_AFTER = 40
 
-    def __init__(self, rom_path, listing_path=None):
+    def __init__(self, path):
+        with open(path) as f:
+            data = json.load(f)
+        self._lines = data['lines']
+        self._addr_to_line = data['addr_to_line']
+
+    def get_slice(self, pc):
+        target_line = self._addr_to_line.get(str(pc))
+        if not target_line:
+            return None
+        start = max(1, target_line - self.CONTEXT_BEFORE)
+        end = min(len(self._lines), target_line + self.CONTEXT_AFTER)
+        lines = []
+        for i in range(start, end + 1):
+            lines.append({'text': self._lines[i - 1], 'current': i == target_line})
+        return lines
+
+
+class Emulator:
+    def __init__(self, rom_path, listing=None):
         self.proc = make_processor()
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
@@ -50,10 +69,7 @@ class Emulator:
         self._epoch_cycles = 0   # cycle count when run started
         self._disasm_history = deque(maxlen=20)
         self.speed_pct = 100     # 0-100, throttle target as % of real clock
-        self._listing = None
-        if listing_path:
-            with open(listing_path) as f:
-                self._listing = json.load(f)
+        self._listing = listing
 
     def get_state(self):
         proc = self.proc
@@ -176,15 +192,7 @@ class Emulator:
     def get_listing_slice(self):
         if not self._listing:
             return None
-        target_line = self._listing['addr_to_line'].get(str(self.proc.pc))
-        if not target_line:
-            return None
-        start = max(1, target_line - self.LISTING_CONTEXT_BEFORE)
-        end = min(len(self._listing['lines']), target_line + self.LISTING_CONTEXT_AFTER)
-        lines = []
-        for i in range(start, end + 1):
-            lines.append({'text': self._listing['lines'][i - 1], 'current': i == target_line})
-        return lines
+        return self._listing.get_slice(self.proc.pc)
 
     def step_one(self):
         self._record_instruction()
@@ -269,9 +277,8 @@ def serve_http(port):
 
 async def main(rom_path):
     listing_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'listing.json')
-    if not os.path.exists(listing_path):
-        listing_path = None
-    emulator = Emulator(rom_path, listing_path)
+    listing = Listing(listing_path) if os.path.exists(listing_path) else None
+    emulator = Emulator(rom_path, listing)
 
     # Start HTTP server in background thread
     http_port = 8080
