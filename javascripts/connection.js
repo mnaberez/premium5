@@ -97,9 +97,10 @@ class EmulatorState {
         this.ac = data.ac;
         this.cy = data.cy;
 
-        // Disassembly
+        // Disassembly and listing
         this.disasmHistory = data.disasm_history;
         this.disasmCurrent = data.disasm_current;
+        this.listingSlice = data.listing_slice;
 
         // Faceplate hardware
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);

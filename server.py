@@ -28,7 +28,10 @@ from k0emu.processor import RegisterPairs, Flags
 
 
 class Emulator:
-    def __init__(self, rom_path):
+    LISTING_CONTEXT_BEFORE = 20
+    LISTING_CONTEXT_AFTER = 40
+
+    def __init__(self, rom_path, listing_path=None):
         self.proc = make_processor()
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
@@ -47,6 +50,10 @@ class Emulator:
         self._epoch_cycles = 0   # cycle count when run started
         self._disasm_history = deque(maxlen=20)
         self.speed_pct = 100     # 0-100, throttle target as % of real clock
+        self._listing = None
+        if listing_path:
+            with open(listing_path) as f:
+                self._listing = json.load(f)
 
     def get_state(self):
         proc = self.proc
@@ -106,6 +113,7 @@ class Emulator:
             'exp_ram_base': 0xF000,
             'hs_ram': bytes(hs_ram).hex(),
             'hs_ram_base': 0xFB00,
+            'listing_slice': self.get_listing_slice(),
         }
 
     CLOCK_HZ = 4_190_000
@@ -164,6 +172,19 @@ class Emulator:
         self._disasm_history.clear()
         self.real_mhz = 0.0
         self.potential_mhz = 0.0
+
+    def get_listing_slice(self):
+        if not self._listing:
+            return None
+        target_line = self._listing['addr_to_line'].get(str(self.proc.pc))
+        if not target_line:
+            return None
+        start = max(1, target_line - self.LISTING_CONTEXT_BEFORE)
+        end = min(len(self._listing['lines']), target_line + self.LISTING_CONTEXT_AFTER)
+        lines = []
+        for i in range(start, end + 1):
+            lines.append({'text': self._listing['lines'][i - 1], 'current': i == target_line})
+        return lines
 
     def step_one(self):
         self._record_instruction()
@@ -247,7 +268,10 @@ def serve_http(port):
 
 
 async def main(rom_path):
-    emulator = Emulator(rom_path)
+    listing_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'listing.json')
+    if not os.path.exists(listing_path):
+        listing_path = None
+    emulator = Emulator(rom_path, listing_path)
 
     # Start HTTP server in background thread
     http_port = 8080

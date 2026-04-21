@@ -1,14 +1,12 @@
 window.onload = function() {
 
-fetch('listing.json').then(r => r.json()).then(function(listingData) {
-
 const faceplateImg = document.querySelector('.faceplate-img');
 const faceplateCanvas = document.getElementById('faceplate-canvas');
 const faceplate = new Faceplate(faceplateImg, faceplateCanvas);
 
 const registersView = new RegistersView(document.getElementById('registers-view'));
 const disasmView = new DisassemblyView(document.getElementById('disasm-listing'));
-const listingView = new ListingView(document.getElementById('listing-view'), listingData);
+const listingView = new ListingView(document.getElementById('listing-view'));
 const ramHs = new MemoryView(document.getElementById('ram-hs'), 992, 0xFB00, 'hsRam');
 const ramExp = new MemoryView(document.getElementById('ram-exp'), 2048, 0xF000, 'expRam');
 const statisticsView = new StatisticsView(document.getElementById('statistics-view'));
@@ -74,5 +72,4 @@ window.switchTab = function(name) {
     event.target.classList.add('active');
 };
 
-}); // fetch listing.json
 }; // window.onload
