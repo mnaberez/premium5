@@ -35,6 +35,9 @@ h1 {
     image-rendering: pixelated;
     border-radius: 8px;
 }
+.faceplate-asset {
+    display: none;
+}
 
 /* Register bar */
 .reg-bar {

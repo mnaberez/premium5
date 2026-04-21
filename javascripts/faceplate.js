@@ -23,7 +23,6 @@ class FaceplateAlarmLED {
     draw(on) {
         const ctx = this._ctx;
         const region = this.region;
-        ctx.clearRect(region.x, region.y, region.width, region.height);
         if (on) {
             const cx = region.x + region.width / 2;
             const cy = region.y + region.height / 2;
@@ -35,11 +34,13 @@ class FaceplateAlarmLED {
             ctx.shadowBlur = 10;
             ctx.fill();
             ctx.shadowBlur = 0;
+        } else {
+            ctx.clearRect(region.x, region.y, region.width, region.height);
         }
     }
 }
 
-class FaceplateLCD {
+class FaceplateCharacterMatrix {
     // x offsets relative to region, pixel size per character
     static CHARS = [
         { x: 42, px: 3 }, { x: 67, px: 3 }, { x: 92, px: 3 }, { x: 117, px: 3 },
@@ -64,26 +65,26 @@ class FaceplateLCD {
     draw(pixels) {
         const region = this.region;
         this._ctx.clearRect(region.x, region.y, region.width, region.height);
-        this._ctx.fillStyle = FaceplateLCD.FG_COLOR;
+        this._ctx.fillStyle = FaceplateCharacterMatrix.FG_COLOR;
 
-        for (let ch = 0; ch < FaceplateLCD.CHARS.length; ch++) {
+        for (let ch = 0; ch < FaceplateCharacterMatrix.CHARS.length; ch++) {
             this._drawChar(pixels, ch);
         }
     }
 
     _drawChar(pixels, index) {
         const region = this.region;
-        const c = FaceplateLCD.CHARS[index];
+        const c = FaceplateCharacterMatrix.CHARS[index];
         const pxGap = 1;
         const bigPx = 6;
-        const bigH = FaceplateLCD.CHAR_ROWS * (bigPx + pxGap) - pxGap;
-        const charH = FaceplateLCD.CHAR_ROWS * (c.px + pxGap) - pxGap;
-        const yOff = region.y + FaceplateLCD.CHAR_Y_OFFSET + (bigH - charH);
-        const byteBase = index * FaceplateLCD.CHAR_ROWS;
+        const bigH = FaceplateCharacterMatrix.CHAR_ROWS * (bigPx + pxGap) - pxGap;
+        const charH = FaceplateCharacterMatrix.CHAR_ROWS * (c.px + pxGap) - pxGap;
+        const yOff = region.y + FaceplateCharacterMatrix.CHAR_Y_OFFSET + (bigH - charH);
+        const byteBase = index * FaceplateCharacterMatrix.CHAR_ROWS;
 
-        for (let row = 0; row < FaceplateLCD.CHAR_ROWS; row++) {
+        for (let row = 0; row < FaceplateCharacterMatrix.CHAR_ROWS; row++) {
             const bits = pixels[byteBase + row] & 0x1F;
-            for (let col = 0; col < FaceplateLCD.CHAR_COLS; col++) {
+            for (let col = 0; col < FaceplateCharacterMatrix.CHAR_COLS; col++) {
                 if ((bits >> (4 - col)) & 1) {
                     this._ctx.fillRect(
                         region.x + c.x + col * (c.px + pxGap),
@@ -91,6 +92,25 @@ class FaceplateLCD {
                         c.px, c.px);
                 }
             }
+        }
+    }
+
+}
+
+class FaceplatePictograph {
+    constructor(faceplate, region, pictograph, img) {
+        this._ctx = faceplate.ctx;
+        this.region = region;
+        this.pictograph = pictograph;
+        this._img = img;
+    }
+
+    draw(on) {
+        const region = this.region;
+        if (on) {
+            this._ctx.drawImage(this._img, region.x, region.y, region.width, region.height);
+        } else {
+            this._ctx.clearRect(region.x, region.y, region.width, region.height);
         }
     }
 }
@@ -160,7 +180,14 @@ class Faceplate {
         canvas.height = this._img.naturalHeight;
 
         // lcd display
-        this.lcd = this._addLCD(265, 169, 460, 55);
+        this.characterMatrix = this._addCharacterMatrix(265, 169, 460, 54);
+
+        // lcd pictographs
+        this._pictographs = [];
+        this._addPictograph(268, 172, 17, 12, Pictograph.DOLBY,  document.getElementById('picto-dolby'));
+        this._addPictograph(268, 207, 31, 12, Pictograph.METAL,  document.getElementById('picto-metal'));
+        this._addPictograph(691, 207, 31, 12, Pictograph.MIX,    document.getElementById('picto-mix'));
+        this._addPictograph(528, 214, 6,  6,  Pictograph.PERIOD, document.getElementById('picto-period'));
 
         // alarm led near power button
         this.alarmLED = this._addAlarmLED(105, 255, 30, 30);
@@ -171,7 +198,7 @@ class Faceplate {
         this._addButton(165, 18,  64,  64,  ButtonCode.TREB);
         this._addButton(165, 89,  64,  66,  ButtonCode.FB);
         this._addButton(312, 45,  68,  69,  ButtonCode.TAPE_SIDE);
-        this._addButton(64,  165, 75,  62,  ButtonCode.SEEK_DOWN);
+        this._addButton(64,  165, 77,  62,  ButtonCode.SEEK_DOWN);
         this._addButton(147, 165, 81,  62,  ButtonCode.SEEK_UP);
         this._addButton(759, 165, 79,  63,  ButtonCode.TUNE_DOWN);
         this._addButton(843, 165, 79,  63,  ButtonCode.TUNE_UP);
@@ -217,12 +244,18 @@ class Faceplate {
 
     get ctx() { return this._ctx; }
 
-    _addLCD(x, y, width, height) {
-        return new FaceplateLCD(this, new FaceplateRegion(x, y, width, height));
+    _addCharacterMatrix(x, y, width, height) {
+        return new FaceplateCharacterMatrix(this, new FaceplateRegion(x, y, width, height));
     }
 
     _addAlarmLED(x, y, width, height) {
         return new FaceplateAlarmLED(this, new FaceplateRegion(x, y, width, height));
+    }
+
+    _addPictograph(x, y, width, height, pictograph, img) {
+        const p = new FaceplatePictograph(this, new FaceplateRegion(x, y, width, height), pictograph, img);
+        this._pictographs.push(p);
+        return p;
     }
 
     _addButton(x, y, width, height, buttonCode) {
@@ -241,6 +274,12 @@ class Faceplate {
         for (const btn of this._buttons) { btn.enabled = false; }
     }
 
+    drawPictographs(activePictographs) {
+        for (const p of this._pictographs) {
+            p.draw(activePictographs.includes(p.pictograph));
+        }
+    }
+
     _scanButtons(e) {
         const scaleX = this._img.naturalWidth / this._canvas.clientWidth;
         const scaleY = this._img.naturalHeight / this._canvas.clientHeight;
@@ -255,17 +294,3 @@ class Faceplate {
     }
 }
 
-// TODO: wire pictograph rendering to server state
-const PICTOGRAPHS = [
-    {name: 'mix',         byte: 5, bit: 1},
-    {name: 'period',      byte: 4, bit: 5},
-    {name: 'tape_metal',  byte: 2, bit: 7},
-    {name: 'tape_dolby',  byte: 1, bit: 2},
-];
-
-const PICTO_POSITIONS = {
-    dolby:  new FaceplateRegion(268, 172, 17, 12),
-    metal:  new FaceplateRegion(268, 207, 31, 12),
-    mix:    new FaceplateRegion(691, 207, 31, 12),
-    period: new FaceplateRegion(528, 214, 6,  6),
-};

@@ -1,13 +1,15 @@
-document.addEventListener('DOMContentLoaded', function() {
+window.onload = function() {
 
 const faceplateImg = document.querySelector('.faceplate-img');
 const faceplateCanvas = document.getElementById('faceplate-canvas');
 const faceplate = new Faceplate(faceplateImg, faceplateCanvas);
+
 const dbg = new Debugger();
 
 const conn = new Connection('ws://localhost:8765');
 conn.onStateReceived = function(state) {
-    faceplate.lcd.draw(state.displayPixels);
+    faceplate.characterMatrix.draw(state.displayPixels);
+    faceplate.drawPictographs(state.activePictographs);
     faceplate.alarmLED.draw(state.led);
     if (state.running) { faceplate.enable(); } else { faceplate.disable(); }
     dbg.update(state);
@@ -37,4 +39,4 @@ window.switchTab = function(name) {
     event.target.classList.add('active');
 };
 
-}); // DOMContentLoaded
+}; // window.onload

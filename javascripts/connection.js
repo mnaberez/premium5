@@ -103,6 +103,7 @@ class EmulatorState {
 
         // Faceplate hardware
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
+        this.activePictographs = EmulatorState._decodePictographs(data.pictogram_ram);
         this.led = data.led;
         this.t30 = data.t30;
 
@@ -117,6 +118,16 @@ class EmulatorState {
             bytes[i] = parseInt(hexStr.slice(i * 2, i * 2 + 2), 16);
         }
         return bytes;
+    }
+
+    static _decodePictographs(hexStr) {
+        if (!hexStr) return [];
+        const ram = EmulatorState._decodeHex(hexStr);
+        const active = [];
+        for (const p of Pictograph.ALL) {
+            if (p.isOn(ram)) active.push(p);
+        }
+        return active;
     }
 }
 
@@ -156,5 +167,25 @@ class ButtonCode {
         this.type = type;
         this.upd_byte = options.upd_byte;
         this.upd_mask = options.upd_mask;
+    }
+}
+
+// Identifies a pictograph on the uPD16432B LCD.
+// Each pictograph is a single bit in the pictograph RAM.
+class Pictograph {
+    static DOLBY  = new Pictograph('dolby',  1, 2);
+    static METAL  = new Pictograph('metal',  2, 7);
+    static MIX    = new Pictograph('mix',    5, 1);
+    static PERIOD = new Pictograph('period', 4, 5);
+    static ALL    = [Pictograph.DOLBY, Pictograph.METAL, Pictograph.MIX, Pictograph.PERIOD];
+
+    constructor(name, upd_byte, upd_bit) {
+        this.name = name;
+        this.upd_byte = upd_byte;
+        this.upd_bit = upd_bit;
+    }
+
+    isOn(pictogramRam) {
+        return (pictogramRam[this.upd_byte] & (1 << this.upd_bit)) !== 0;
     }
 }
