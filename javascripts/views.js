@@ -1,5 +1,7 @@
 function hex16(n) { return n.toString(16).toUpperCase().padStart(4, '0'); }
 function hex8(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
+const _escapeDiv = document.createElement('div');
+function escapeHtml(s) { _escapeDiv.textContent = s; return _escapeDiv.innerHTML; }
 
 class RegistersView {
     constructor(el) {
@@ -71,7 +73,7 @@ class ListingView {
                     const html = [];
                     for (let i = startLine; i <= endLine; i++) {
                         const text = this._lstData.lines[i - 1];
-                        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                        const escaped = escapeHtml(text);
                         const cls = (i === targetLine) ? 'listing-line-current' : 'listing-line';
                         html.push('<span class="' + cls + '">' + escaped + '</span>');
                     }
