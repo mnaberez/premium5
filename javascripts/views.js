@@ -51,43 +51,30 @@ class DisassemblyView {
 }
 
 class ListingView {
-    constructor(el) {
+    constructor(el, listingData) {
         this._el = el;
-        this._lstData = null;
-
-        fetch('listing.json').then(r => r.json()).then(data => {
-            this._lstData = data;
-        }).catch(e => console.error('Failed to load listing:', e));
+        this._lstData = listingData;
     }
 
     update(state) {
-        if (this._el.style.display === 'none' || this._el.style.display === '') return;
-        try {
-            if (!this._lstData) {
-                this._el.textContent = 'Loading listing...';
-            } else {
-                const targetLine = this._lstData.addr_to_line[String(state.pc)];
-                if (targetLine) {
-                    const startLine = Math.max(1, targetLine - 20);
-                    const endLine = Math.min(this._lstData.lines.length, targetLine + 40);
-                    const html = [];
-                    for (let i = startLine; i <= endLine; i++) {
-                        const text = this._lstData.lines[i - 1];
-                        const escaped = escapeHtml(text);
-                        const cls = (i === targetLine) ? 'listing-line-current' : 'listing-line';
-                        html.push('<span class="' + cls + '">' + escaped + '</span>');
-                    }
-                    this._el.innerHTML = html.join('');
-                    const currentEl = this._el.querySelector('.listing-line-current');
-                    if (currentEl) {
-                        currentEl.scrollIntoView({block: 'center', behavior: 'auto'});
-                    }
-                } else {
-                    this._el.textContent = 'No listing for PC=0x' + hex16(state.pc);
-                }
+        const targetLine = this._lstData.addr_to_line[String(state.pc)];
+        if (targetLine) {
+            const startLine = Math.max(1, targetLine - 20);
+            const endLine = Math.min(this._lstData.lines.length, targetLine + 40);
+            const html = [];
+            for (let i = startLine; i <= endLine; i++) {
+                const text = this._lstData.lines[i - 1];
+                const escaped = escapeHtml(text);
+                const cls = (i === targetLine) ? 'listing-line-current' : 'listing-line';
+                html.push('<span class="' + cls + '">' + escaped + '</span>');
             }
-        } catch(e) {
-            this._el.textContent = 'ERROR: ' + e.message;
+            this._el.innerHTML = html.join('');
+            const currentEl = this._el.querySelector('.listing-line-current');
+            if (currentEl) {
+                currentEl.scrollIntoView({block: 'center', behavior: 'auto'});
+            }
+        } else {
+            this._el.textContent = 'No listing for PC=0x' + hex16(state.pc);
         }
     }
 }
