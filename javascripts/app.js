@@ -4,7 +4,12 @@ const faceplateImg = document.querySelector('.faceplate-img');
 const faceplateCanvas = document.getElementById('faceplate-canvas');
 const faceplate = new Faceplate(faceplateImg, faceplateCanvas);
 
-const dbg = new Debugger();
+const registersView = new RegistersView(document.getElementById('registers-view'));
+const disasmView = new DisassemblyView(document.getElementById('disasm-listing'));
+const listingView = new ListingView(document.getElementById('listing-view'));
+const ramHs = new MemoryView(document.getElementById('ram-hs'), 992, 0xFB00, 'hsRam');
+const ramExp = new MemoryView(document.getElementById('ram-exp'), 2048, 0xF000, 'expRam');
+const statisticsView = new StatisticsView(document.getElementById('statistics-view'));
 
 const conn = new Connection('ws://localhost:8765');
 conn.onStateReceived = function(state) {
@@ -12,11 +17,15 @@ conn.onStateReceived = function(state) {
     faceplate.drawPictographs(state.activePictographs);
     faceplate.alarmLED.draw(state.led);
     if (state.running) { faceplate.enable(); } else { faceplate.disable(); }
-    dbg.update(state);
+    registersView.update(state);
+    disasmView.update(state);
+    listingView.update(state);
+    ramHs.update(state);
+    ramExp.update(state);
+    statisticsView.update(state);
     controls.updateStatus(state);
 };
 conn.onOpen = function() {
-    dbg.init();
     controls.stop();
 };
 conn.onClose = function() {
@@ -31,7 +40,31 @@ faceplate.onButtonUp = function(buttonCode) { conn.buttonUp(buttonCode); };
 window.sendCmd = function(action) { controls[action](); };
 window.toggleAnimate = function() { controls.toggleAnimate(); };
 window.setAnimateSpeed = function(val) { controls.setAnimateSpeed(val); };
-window.toggleExpand = function() { dbg.toggleExpand(); controls.state(); };
+window.toggleExpand = function() {
+    const left = document.getElementById('panel-left');
+    const row = document.querySelector('.info-row');
+    const btn = document.getElementById('expand-btn');
+    const disasmEl = document.getElementById('disasm-listing');
+    const listingEl = document.getElementById('listing-view');
+    const heading = document.querySelector('#panel-instructions h2');
+    const expanded = listingEl.style.display === 'block';
+    if (!expanded) {
+        left.style.display = 'none';
+        row.style.gridTemplateColumns = '1fr';
+        btn.textContent = '[-]';
+        disasmEl.style.display = 'none';
+        listingEl.style.display = 'block';
+        heading.textContent = 'Listing';
+    } else {
+        left.style.display = '';
+        row.style.gridTemplateColumns = '3fr 2fr';
+        btn.textContent = '[+]';
+        disasmEl.style.display = '';
+        listingEl.style.display = 'none';
+        heading.textContent = 'Instructions';
+    }
+    controls.state();
+};
 window.switchTab = function(name) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-bar button').forEach(el => el.classList.remove('active'));

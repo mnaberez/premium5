@@ -17,25 +17,27 @@
         <img class="faceplate-asset" id="picto-period" src="images/pictograph-period.png">
     </div>
 
-    <div class="reg-bar">
-        <span class="reg-name">PC </span><span class="reg-value" id="reg-pc2">0000</span>
-        <span class="reg-name">SP </span><span class="reg-value" id="reg-sp2">0000</span>
-        <span class="reg-name">AX </span><span class="reg-value" id="reg-ax2">0000</span>
-        <span class="reg-name">BC </span><span class="reg-value" id="reg-bc2">0000</span>
-        <span class="reg-name">DE </span><span class="reg-value" id="reg-de2">0000</span>
-        <span class="reg-name">HL </span><span class="reg-value" id="reg-hl2">0000</span>
-    </div>
-    <div class="reg-bar">
-        <span class="reg-name">PSW </span><span class="reg-value" id="reg-psw2">00</span>
-        <span id="rb-0" class="flag-clear">RB0</span>
-        <span id="rb-1" class="flag-clear">RB1</span>
-        <span id="rb-2" class="flag-clear">RB2</span>
-        <span id="rb-3" class="flag-clear">RB3</span>
-        <span id="flag-ie2" class="flag-clear">IE</span>
-        <span id="flag-isp2" class="flag-clear">ISP</span>
-        <span id="flag-z2" class="flag-clear">Z</span>
-        <span id="flag-ac2" class="flag-clear">AC</span>
-        <span id="flag-cy2" class="flag-clear">CY</span>
+    <div id="registers-view">
+        <div class="reg-bar">
+            <span class="reg-name">PC </span><span class="reg-value" data-reg="pc">0000</span>
+            <span class="reg-name">SP </span><span class="reg-value" data-reg="sp">0000</span>
+            <span class="reg-name">AX </span><span class="reg-value" data-reg="ax">0000</span>
+            <span class="reg-name">BC </span><span class="reg-value" data-reg="bc">0000</span>
+            <span class="reg-name">DE </span><span class="reg-value" data-reg="de">0000</span>
+            <span class="reg-name">HL </span><span class="reg-value" data-reg="hl">0000</span>
+        </div>
+        <div class="reg-bar">
+            <span class="reg-name">PSW </span><span class="reg-value" data-reg="psw">00</span>
+            <span class="flag-clear" data-rb="0">RB0</span>
+            <span class="flag-clear" data-rb="1">RB1</span>
+            <span class="flag-clear" data-rb="2">RB2</span>
+            <span class="flag-clear" data-rb="3">RB3</span>
+            <span class="flag-clear" data-flag="ie">IE</span>
+            <span class="flag-clear" data-flag="isp">ISP</span>
+            <span class="flag-clear" data-flag="z">Z</span>
+            <span class="flag-clear" data-flag="ac">AC</span>
+            <span class="flag-clear" data-flag="cy">CY</span>
+        </div>
     </div>
 
     <div class="controls">
@@ -77,16 +79,16 @@
         </div>
     </div>
 
-    <div class="status-bar">
-        Cycles: <span class="cycles-value" id="cycles">0</span>
-        | Simulated: <span class="cycles-value" id="sim-time">0.000</span>s
-        | Speed: <span class="cycles-value" id="speed-pct">0.0</span>% (actual: <span class="cycles-value" id="real-mhz">0.0</span> MHz, raw: <span class="cycles-value" id="potential-mhz">0.0</span> MHz)
+    <div class="status-bar" id="statistics-view">
+        Cycles: <span class="cycles-value" data-stat="cycles">0</span>
+        | Simulated: <span class="cycles-value" data-stat="sim-time">0.000</span>s
+        | Speed: <span class="cycles-value" data-stat="speed-pct">0.0</span>% (actual: <span class="cycles-value" data-stat="real-mhz">0.0</span> MHz, raw: <span class="cycles-value" data-stat="potential-mhz">0.0</span> MHz)
     </div>
 </div>
 
 <script src="javascripts/connection.js"></script>
 <script src="javascripts/faceplate.js"></script>
-<script src="javascripts/debugger.js"></script>
+<script src="javascripts/views.js"></script>
 <script src="javascripts/controls.js"></script>
 <script src="javascripts/app.js"></script>
 </body>
