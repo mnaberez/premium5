@@ -85,20 +85,20 @@ class MemoryView {
 
         const lines = [];
         for (let row = 0; row < size; row += MemoryView.BYTES_PER_ROW) {
-            let line = '<span class="ram-addr">' + hex16(baseAddr + row) + '</span>  ';
+            let line = '<span class="mem-addr">' + hex16(baseAddr + row) + '</span>  ';
             for (let col = 0; col < MemoryView.BYTES_PER_ROW && row + col < size; col++) {
-                line += '<span class="ram-byte">00</span> ';
+                line += '<span class="mem-byte">00</span> ';
             }
             line += ' ';
             for (let col = 0; col < MemoryView.BYTES_PER_ROW && row + col < size; col++) {
-                line += '<span class="ram-ascii-byte">.</span>';
+                line += '<span class="mem-ascii">.</span>';
             }
             lines.push(line);
         }
         el.innerHTML = lines.join('\n');
 
-        this._hSpans = el.querySelectorAll('.ram-byte');
-        this._aSpans = el.querySelectorAll('.ram-ascii-byte');
+        this._hSpans = el.querySelectorAll('.mem-byte');
+        this._aSpans = el.querySelectorAll('.mem-ascii');
     }
 
     update(state) {

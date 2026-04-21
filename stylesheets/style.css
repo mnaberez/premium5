@@ -205,16 +205,16 @@ h1 {
 }
 
 /* RAM dump */
-.ram-dump {
+.mem-dump {
     font-size: 13px;
     line-height: 1.4;
     overflow-y: scroll;
     height: 100%;
     white-space: pre;
 }
-.ram-addr { color: #888; }
-.ram-byte { color: #333; transition: background-color 1s; }
-.ram-ascii-byte { color: #1a6; transition: background-color 1s; }
+.mem-addr { color: #888; }
+.mem-byte { color: #333; transition: background-color 1s; }
+.mem-ascii { color: #1a6; transition: background-color 1s; }
 
 /* Status bar */
 .status-bar {

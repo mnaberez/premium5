@@ -7,8 +7,9 @@ const faceplate = new Faceplate(faceplateImg, faceplateCanvas);
 const registersView = new RegistersView(document.getElementById('registers-view'));
 const disasmView = new DisassemblyView(document.getElementById('disasm-listing'));
 const listingView = new ListingView(document.getElementById('listing-view'));
-const ramHs = new MemoryView(document.getElementById('ram-hs'), 992, 0xFB00, 'hsRam');
-const ramExp = new MemoryView(document.getElementById('ram-exp'), 2048, 0xF000, 'expRam');
+const ramHs = new MemoryView(document.getElementById('mem-hs-ram'), 992, 0xFB00, 'hsRam');
+const ramExp = new MemoryView(document.getElementById('mem-exp-ram'), 2048, 0xF000, 'expRam');
+const eeprom = new MemoryView(document.getElementById('mem-eeprom'), 512, 0x0000, 'eeprom');
 const statisticsView = new StatisticsView(document.getElementById('statistics-view'));
 
 const conn = new Connection('ws://localhost:8765');
@@ -22,6 +23,7 @@ conn.onStateReceived = function(state) {
     listingView.update(state);
     ramHs.update(state);
     ramExp.update(state);
+    eeprom.update(state);
     statisticsView.update(state);
     controls.updateStatus(state);
 };

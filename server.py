@@ -98,9 +98,10 @@ class Emulator:
         if wall_since_epoch > 0 and self.running:
             self.real_mhz = ((proc.total_cycles - self._epoch_cycles) / wall_since_epoch) / 1_000_000
 
-        # RAM dumps
+        # Memory dumps
         exp_ram = proc.bus.device("expansion_ram")._data
         hs_ram = proc.bus.device("high_speed_ram")._data
+        eeprom = proc.bus.device("iic0")._targets[0x50]._data
 
         return {
             'running': self.running,
@@ -129,6 +130,8 @@ class Emulator:
             'exp_ram_base': 0xF000,
             'hs_ram': bytes(hs_ram).hex(),
             'hs_ram_base': 0xFB00,
+            'eeprom': bytes(eeprom).hex(),
+            'eeprom_base': 0x0000,
             'listing_slice': self.get_listing_slice(),
         }
 

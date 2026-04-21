@@ -58,13 +58,17 @@
             <div class="tab-bar">
                 <button class="active" onclick="switchTab('hs-ram')">High-Speed RAM</button>
                 <button onclick="switchTab('exp-ram')">Expansion RAM</button>
+                <button onclick="switchTab('eeprom')">EEPROM</button>
             </div>
             <div class="tab-body">
                 <div class="tab-content active" id="tab-hs-ram">
-                    <div class="ram-dump" id="ram-hs"></div>
+                    <div class="mem-dump" id="mem-hs-ram"></div>
                 </div>
                 <div class="tab-content" id="tab-exp-ram">
-                    <div class="ram-dump" id="ram-exp"></div>
+                    <div class="mem-dump" id="mem-exp-ram"></div>
+                </div>
+                <div class="tab-content" id="tab-eeprom">
+                    <div class="mem-dump" id="mem-eeprom"></div>
                 </div>
             </div>
         </div>

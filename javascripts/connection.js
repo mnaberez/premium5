@@ -108,9 +108,10 @@ class EmulatorState {
         this.led = data.led;
         this.t30 = data.t30;
 
-        // RAM dumps
+        // Memory dumps
         this.expRam = data.exp_ram;
         this.hsRam = data.hs_ram;
+        this.eeprom = data.eeprom;
     }
 
     static _decodeHex(hexStr) {
