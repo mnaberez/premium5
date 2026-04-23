@@ -104,7 +104,7 @@ class EmulatorState {
 
         // Faceplate hardware
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
-        this.activePictographs = EmulatorState._decodePictographs(data.pictogram_ram);
+        this.activePictographs = EmulatorState._decodePictographs(data.pictograph_ram);
         this.led = data.led;
         this.t30 = data.t30;
 
@@ -187,7 +187,7 @@ class Pictograph {
         this.upd_bit = upd_bit;
     }
 
-    isOn(pictogramRam) {
-        return (pictogramRam[this.upd_byte] & (1 << this.upd_bit)) !== 0;
+    isOn(pictographRam) {
+        return (pictographRam[this.upd_byte] & (1 << this.upd_bit)) !== 0;
     }
 }

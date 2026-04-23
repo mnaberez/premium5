@@ -23,7 +23,7 @@ import websockets
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'k0emu-main'))
 
 from k0dasm.disassemble import disassemble
-from k0emu.system import make_processor, populate_eeprom, patch_rom, configure_interrupts
+from k0emu.system import make_processor, populate_eeprom, configure_interrupts
 from k0emu.processor import RegisterPairs, Flags
 
 
@@ -55,7 +55,6 @@ class Emulator:
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
         populate_eeprom(self.proc)
-        patch_rom(self.proc)
         self.proc.bus.reset()
         configure_interrupts(self.proc)
         # S-Contact (P9.0) left low = ignition off, alarm LED will blink
@@ -84,8 +83,9 @@ class Emulator:
             hex_str = "%02x" % proc.bus.read(proc.pc)
             current = {'addr': proc.pc, 'hex': hex_str, 'inst': '???'}
 
-        # Display pixels from UPD16432B
+        # Display pixels and pictograph RAM from UPD16432B
         display_pixels = bytes(self.upd.get_display_pixels()).hex()
+        pictograph_ram = bytes(self.upd.pictograph_ram).hex()
 
         # LED
         led = not bool(proc.bus.read(0xFF03) & 0x08)
@@ -122,6 +122,7 @@ class Emulator:
             'disasm_history': list(self._disasm_history),
             'disasm_current': current,
             'display_pixels': display_pixels,
+            'pictograph_ram': pictograph_ram,
             'led': led,
             't30': round(t30, 1),
             'real_mhz': round(self.real_mhz, 2),
