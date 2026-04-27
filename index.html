@@ -17,27 +17,30 @@
         <img class="faceplate-asset" id="picto-period" src="images/pictograph-period.png">
     </div>
 
-    <div id="registers-view">
-        <div class="reg-bar">
-            <span class="reg-name">PC </span><span class="reg-value" data-reg="pc">0000</span>
-            <span class="reg-name">SP </span><span class="reg-value" data-reg="sp">0000</span>
-            <span class="reg-name">AX </span><span class="reg-value" data-reg="ax">0000</span>
-            <span class="reg-name">BC </span><span class="reg-value" data-reg="bc">0000</span>
-            <span class="reg-name">DE </span><span class="reg-value" data-reg="de">0000</span>
-            <span class="reg-name">HL </span><span class="reg-value" data-reg="hl">0000</span>
+    <div style="display:flex; align-items:flex-start">
+        <div id="registers-view">
+            <div class="reg-bar">
+                <span class="reg-name">PC </span><span class="reg-value" data-reg="pc">0000</span>
+                <span class="reg-name">SP </span><span class="reg-value" data-reg="sp">0000</span>
+                <span class="reg-name">AX </span><span class="reg-value" data-reg="ax">0000</span>
+                <span class="reg-name">BC </span><span class="reg-value" data-reg="bc">0000</span>
+                <span class="reg-name">DE </span><span class="reg-value" data-reg="de">0000</span>
+                <span class="reg-name">HL </span><span class="reg-value" data-reg="hl">0000</span>
+            </div>
+            <div class="reg-bar">
+                <span class="reg-name">PSW </span><span class="reg-value" data-reg="psw">00</span>
+                <span class="flag-clear" data-rb="0">RB0</span>
+                <span class="flag-clear" data-rb="1">RB1</span>
+                <span class="flag-clear" data-rb="2">RB2</span>
+                <span class="flag-clear" data-rb="3">RB3</span>
+                <span class="flag-clear" data-flag="ie">IE</span>
+                <span class="flag-clear" data-flag="isp">ISP</span>
+                <span class="flag-clear" data-flag="z">Z</span>
+                <span class="flag-clear" data-flag="ac">AC</span>
+                <span class="flag-clear" data-flag="cy">CY</span>
+            </div>
         </div>
-        <div class="reg-bar">
-            <span class="reg-name">PSW </span><span class="reg-value" data-reg="psw">00</span>
-            <span class="flag-clear" data-rb="0">RB0</span>
-            <span class="flag-clear" data-rb="1">RB1</span>
-            <span class="flag-clear" data-rb="2">RB2</span>
-            <span class="flag-clear" data-rb="3">RB3</span>
-            <span class="flag-clear" data-flag="ie">IE</span>
-            <span class="flag-clear" data-flag="isp">ISP</span>
-            <span class="flag-clear" data-flag="z">Z</span>
-            <span class="flag-clear" data-flag="ac">AC</span>
-            <span class="flag-clear" data-flag="cy">CY</span>
-        </div>
+        <span class="mfsw-controls" style="margin-left:auto">MFSW: <button onclick="sendMFSW('vol_down')">VOL -</button><button onclick="sendMFSW('vol_up')">VOL +</button><button onclick="sendMFSW('up')">UP</button><button onclick="sendMFSW('down')">DOWN</button></span>
     </div>
 
     <div class="controls">

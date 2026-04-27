@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'k0emu-main'))
 
 from k0dasm.disassemble import disassemble
 from k0emu.system import make_processor, populate_eeprom, configure_interrupts
-from k0emu.processor import RegisterPairs, Flags
+from k0emu.processor import RegisterPairs, Flags, RunState
+from k0emu.mfsw import MFSWTransmitter
 
 
 class Listing:
@@ -59,6 +60,8 @@ class Emulator:
         configure_interrupts(self.proc)
         # S-Contact (P9.0) left low = ignition off, alarm LED will blink
         self.upd = self.proc.bus.device("csi30").target
+        self.mfsw = MFSWTransmitter()
+        self._p0 = self.proc.bus.device("p0")
         self.running = False
         self._trace = False
         self.steps_per_frame = 50000
@@ -143,35 +146,33 @@ class Emulator:
         self._epoch_cycles = self.proc.total_cycles
         self.running = True
 
-    def _record_instruction(self):
-        proc = self.proc
+    def _disasm_at(self, pc):
         try:
-            dasm = disassemble(proc.bus, proc.pc)
+            dasm = disassemble(self.proc.bus, pc)
             hex_str = ' '.join(["%02x" % x for x in dasm.all_bytes])
-            self._disasm_history.append({'addr': proc.pc, 'hex': hex_str, 'inst': str(dasm)})
+            self._disasm_history.append({'addr': pc, 'hex': hex_str, 'inst': str(dasm)})
         except Exception:
-            hex_str = "%02x" % proc.bus.read(proc.pc)
-            self._disasm_history.append({'addr': proc.pc, 'hex': hex_str, 'inst': '???'})
+            hex_str = "%02x" % self.proc.bus.read(pc)
+            self._disasm_history.append({'addr': pc, 'hex': hex_str, 'inst': '???'})
+
+    def _tick_mfsw(self):
+        """Tick the MFSW transmitter and update P0.0."""
+        cycles = self.proc.inst_cycles
+        self.mfsw.tick(cycles)
+        # Wire is active-low, HEF40106BT inverts: wire LOW -> P0.0 HIGH
+        self._p0.set_external_input(0, not self.mfsw.wire)
 
     def step_batch(self):
         t0 = time.monotonic()
         c0 = self.proc.total_cycles
-        tail = self._disasm_history.maxlen
-        head_count = self.steps_per_frame - tail
-        # Run most steps without recording
-        last_pc = None
-        for _ in range(head_count):
-            pc = self.proc.pc
-            if pc != last_pc and last_pc is not None:
-                # non-halt instruction
-                if self._trace:
-                    sys.stderr.write("  PC=%04X\n" % pc)
-            last_pc = pc
+        recent_pcs = deque(maxlen=self._disasm_history.maxlen)
+        for _ in range(self.steps_per_frame):
+            if self.proc.run_state != RunState.HALTED:
+                recent_pcs.append(self.proc.pc)
             self.proc.step()
-        # Record the last N steps
-        for _ in range(tail):
-            self._record_instruction()
-            self.proc.step()
+            self._tick_mfsw()
+        for pc in recent_pcs:
+            self._disasm_at(pc)
         elapsed = time.monotonic() - t0
         if elapsed > 0:
             self.potential_mhz = ((self.proc.total_cycles - c0) / elapsed) / 1_000_000
@@ -199,8 +200,9 @@ class Emulator:
         return self._listing.get_slice(self.proc.pc)
 
     def step_one(self):
-        self._record_instruction()
+        self._disasm_at(self.proc.pc)
         self.proc.step()
+        self._tick_mfsw()
 
 
 async def handle_client(websocket, emulator):
@@ -255,9 +257,10 @@ async def handle_client(websocket, emulator):
             emulator._epoch_cycles = emulator.proc.total_cycles
 
         elif action == 'power_key':
-            sys.stderr.write("POWER KEY pressed\n")
             p0 = emulator.proc.bus.device("p0")
-            p0.press_power_key()
+            p0.set_external_input(4, True)   # release (ensures edge on re-press)
+            p0.set_external_input(2, False)  # P0.2 low (wake)
+            p0.set_external_input(4, False)  # P0.4 low (key pressed)
 
         elif action == 'key_down':
             upd = emulator.upd
@@ -266,6 +269,18 @@ async def handle_client(websocket, emulator):
         elif action == 'key_up':
             upd = emulator.upd
             upd.key_data[cmd['byte']] &= ~cmd['mask']
+
+        elif action == 'mfsw':
+            import k0emu.mfsw as mfsw
+            code = cmd.get('code')
+            codes = {
+                'vol_down': mfsw.VOL_DOWN,
+                'vol_up': mfsw.VOL_UP,
+                'up': mfsw.UP,
+                'down': mfsw.DOWN,
+            }
+            if code in codes and not emulator.mfsw.busy:
+                emulator.mfsw.send(codes[code])
 
         elif action == 'state':
             await websocket.send(json.dumps(emulator.get_state()))

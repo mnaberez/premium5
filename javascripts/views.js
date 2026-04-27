@@ -30,18 +30,24 @@ class DisassemblyView {
 
     update(state) {
         const totalLines = 21;
-        const blanks = totalLines - state.disasmHistory.length - 1;
+        const cur = state.disasmCurrent;
+        const history = state.disasmHistory;
+        const hideLast = history.length > 0 &&
+            history[history.length - 1].addr === cur.addr;
+        const visibleCount = hideLast ? history.length - 1 : history.length;
+        const blanks = totalLines - visibleCount - 1;
         const lines = [];
         for (let i = 0; i < blanks; i++) {
             lines.push('<div class="disasm-line">&nbsp;</div>');
         }
-        state.disasmHistory.forEach(line => {
+        const end = hideLast ? history.length - 1 : history.length;
+        for (let i = 0; i < end; i++) {
+            const line = history[i];
             lines.push('<div class="disasm-line">' +
                 '<span class="disasm-addr">' + hex16(line.addr) + '</span> ' +
                 '<span class="disasm-hex">' + line.hex + '</span> ' +
                 '<span class="disasm-inst">' + line.inst + '</span></div>');
-        });
-        const cur = state.disasmCurrent;
+        }
         lines.push('<div class="disasm-line-current">' +
             '<span class="disasm-addr">' + hex16(cur.addr) + '</span> ' +
             '<span class="disasm-hex">' + cur.hex + '</span> ' +

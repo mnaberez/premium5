@@ -64,6 +64,9 @@ class Connection {
             this._send('key_up', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
         }
     }
+
+    // MFSW (steering wheel) input
+    mfsw(code) { this._send('mfsw', {code: code}); }
 }
 
 // Hydrated from the JSON state object pushed by the server.

@@ -68,6 +68,28 @@ h1 {
 .controls button:hover { background: #ccc; }
 .controls button:disabled { color: #aaa; border-color: #bbb; cursor: default; }
 .controls button:disabled:hover { background: #e0e0e0; }
+.mfsw-controls {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #333;
+}
+.mfsw-controls button {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 0;
+    width: 50px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    vertical-align: middle;
+    margin-left: 3px;
+    background: #e8e8e8;
+    color: #333;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.mfsw-controls button:hover { background: #ddd; }
 .status-text {
     display: inline-block;
     margin-left: 15px;

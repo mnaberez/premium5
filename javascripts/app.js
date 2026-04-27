@@ -40,6 +40,7 @@ faceplate.onButtonUp = function(buttonCode) { conn.buttonUp(buttonCode); };
 
 // Expose globals for inline onclick handlers in HTML
 window.sendCmd = function(action) { controls[action](); };
+window.sendMFSW = function(code) { conn.mfsw(code); };
 window.toggleAnimate = function() { controls.toggleAnimate(); };
 window.setAnimateSpeed = function(val) { controls.setAnimateSpeed(val); };
 window.toggleExpand = function() {
