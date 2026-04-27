@@ -1,45 +1,46 @@
-// WebSocket connection to the emulator server.
+// Connection to the emulator server.
 //
-// Communication is one-directional: the client sends commands via
-// the methods below, and the server pushes EmulatorState objects
-// back.  Every command triggers a state response.  While the
-// emulator is running, the server also pushes state continuously
-// after each execution batch.
+// State updates are received via Server-Sent Events (GET /events).
+// Commands are sent via HTTP POST to /command.  Commands are not
+// acknowledged; the server pushes a state update after each one.
 //
-// All server responses are the same EmulatorState object — there
-// are no other message types.
+// All server responses are the same EmulatorState object.
 
 class Connection {
-    constructor(url) {
-        this.onStateReceived = null;  // called with EmulatorState on each server push
-        this.onOpen = null;           // called when connected
-        this.onClose = null;          // called when disconnected
+    constructor() {
+        this.onStateReceived = null;
+        this.onOpen = null;
+        this.onClose = null;
 
-        this._initWebSocket(url);
+        this._initSSE();
     }
 
-    _initWebSocket(url) {
-        this._ws = new WebSocket(url);
+    _initSSE() {
+        this._sse = new EventSource('/events');
 
-        this._ws.onmessage = (event) => {
+        this._sse.onmessage = (event) => {
             if (this.onStateReceived) {
                 const state = EmulatorState.fromJSON(event.data);
                 this.onStateReceived(state);
             }
         };
 
-        this._ws.onopen = () => {
+        this._sse.onopen = () => {
             if (this.onOpen) this.onOpen();
         };
 
-        this._ws.onclose = () => {
+        this._sse.onerror = () => {
             if (this.onClose) this.onClose();
         };
     }
 
     _send(action, extra) {
         const msg = Object.assign({action: action}, extra || {});
-        this._ws.send(JSON.stringify(msg));
+        fetch('/command', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(msg),
+        });
     }
 
     // Emulator control

@@ -12,7 +12,7 @@ const ramExp = new MemoryView(document.getElementById('mem-exp-ram'), 2048, 0xF0
 const eeprom = new MemoryView(document.getElementById('mem-eeprom'), 512, 0x0000, 'eeprom');
 const statisticsView = new StatisticsView(document.getElementById('statistics-view'));
 
-const conn = new Connection('ws://localhost:8765');
+const conn = new Connection();
 conn.onStateReceived = function(state) {
     faceplate.characterMatrix.draw(state.displayPixels);
     faceplate.drawPictographs(state.activePictographs);

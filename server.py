@@ -1,9 +1,9 @@
 """
 k0emu web frontend server.
 
-Runs the 78K/0 emulator and serves a web UI over WebSocket.
-The frontend shows registers, disassembly, display buffer, and
-provides start/stop control.
+Runs the 78K/0 emulator and serves a web UI over HTTP.
+The frontend receives emulator state via Server-Sent Events
+and sends commands via HTTP POST.
 
 Usage: pypy3 server.py <rom.bin>
 """
@@ -13,11 +13,8 @@ import os
 import json
 import asyncio
 import time
-import http.server
-import threading
+import mimetypes
 from collections import deque
-
-import websockets
 
 # Add k0emu to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'k0emu-main'))
@@ -204,71 +201,39 @@ class Emulator:
         self.proc.step()
         self._tick_mfsw()
 
-
-async def handle_client(websocket, emulator):
-    # Send initial state
-    await websocket.send(json.dumps(emulator.get_state()))
-
-    async def run_loop():
-        while emulator.running:
-            if emulator.speed_pct > 0:
-                emulator.step_batch()
-                await websocket.send(json.dumps(emulator.get_state()))
-                delay = emulator.throttle_delay()
-                await asyncio.sleep(delay)
-            else:
-                await asyncio.sleep(0.05)
-
-    run_task = None
-
-    async for message in websocket:
-        cmd = json.loads(message)
+    def handle_command(self, cmd):
         action = cmd.get('action')
 
         if action == 'start':
-            emulator.start_run()
-            if run_task is None or run_task.done():
-                run_task = asyncio.create_task(run_loop())
+            self.start_run()
 
         elif action == 'stop':
-            emulator.running = False
-            if run_task:
-                await run_task
-                run_task = None
-            await websocket.send(json.dumps(emulator.get_state()))
+            self.running = False
 
         elif action == 'step':
-            if not emulator.running:
-                emulator.step_one()
-                await websocket.send(json.dumps(emulator.get_state()))
+            if not self.running:
+                self.step_one()
 
         elif action == 'reset':
-            emulator.running = False
-            if run_task:
-                await run_task
-                run_task = None
-            emulator.reset()
-            await websocket.send(json.dumps(emulator.get_state()))
+            self.running = False
+            self.reset()
 
         elif action == 'speed':
-            emulator.speed_pct = cmd.get('value', 100)
-            # Reset epoch so throttle recalibrates from this point
-            emulator._epoch_time = time.monotonic()
-            emulator._epoch_cycles = emulator.proc.total_cycles
+            self.speed_pct = cmd.get('value', 100)
+            self._epoch_time = time.monotonic()
+            self._epoch_cycles = self.proc.total_cycles
 
         elif action == 'power_key':
-            p0 = emulator.proc.bus.device("p0")
+            p0 = self.proc.bus.device("p0")
             p0.set_external_input(4, True)   # release (ensures edge on re-press)
             p0.set_external_input(2, False)  # P0.2 low (wake)
             p0.set_external_input(4, False)  # P0.4 low (key pressed)
 
         elif action == 'key_down':
-            upd = emulator.upd
-            upd.key_data[cmd['byte']] |= cmd['mask']
+            self.upd.key_data[cmd['byte']] |= cmd['mask']
 
         elif action == 'key_up':
-            upd = emulator.upd
-            upd.key_data[cmd['byte']] &= ~cmd['mask']
+            self.upd.key_data[cmd['byte']] &= ~cmd['mask']
 
         elif action == 'mfsw':
             import k0emu.mfsw as mfsw
@@ -279,43 +244,144 @@ async def handle_client(websocket, emulator):
                 'up': mfsw.UP,
                 'down': mfsw.DOWN,
             }
-            if code in codes and not emulator.mfsw.busy:
-                emulator.mfsw.send(codes[code])
-
-        elif action == 'state':
-            await websocket.send(json.dumps(emulator.get_state()))
+            if code in codes and not self.mfsw.busy:
+                self.mfsw.send(codes[code])
 
 
-def serve_http(port):
-    """Serve static files from the current directory."""
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    handler = http.server.SimpleHTTPRequestHandler
-    httpd = http.server.HTTPServer(('', port), handler)
-    httpd.serve_forever()
+WEB_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+async def handle_connection(reader, writer, emulator, sse_clients):
+    try:
+        while True:
+            request_line = await reader.readline()
+            if not request_line:
+                break
+
+            method, path, _ = request_line.decode().split(' ', 2)
+            sys.stderr.write('%s %s\n' % (method, path))
+
+            # Read headers
+            headers = {}
+            while True:
+                line = await reader.readline()
+                if line == b'\r\n' or not line:
+                    break
+                name, _, value = line.decode().partition(':')
+                headers[name.strip().lower()] = value.strip()
+
+            if method == 'GET' and path == '/events':
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: text/event-stream\r\n')
+                writer.write(b'Cache-Control: no-cache\r\n')
+                writer.write(b'Connection: keep-alive\r\n')
+                writer.write(b'\r\n')
+                await writer.drain()
+                sse_clients.add(writer)
+                data = json.dumps(emulator.get_state())
+                writer.write(('data: %s\n\n' % data).encode())
+                await writer.drain()
+                try:
+                    while not reader.at_eof():
+                        await asyncio.sleep(1)
+                finally:
+                    sse_clients.discard(writer)
+                break
+
+            if method == 'POST' and path == '/command':
+                content_length = int(headers.get('content-length', 0))
+                body = await reader.readexactly(content_length)
+                cmd = json.loads(body)
+                emulator.handle_command(cmd)
+                writer.write(b'HTTP/1.1 204 No Content\r\n')
+                writer.write(b'Connection: keep-alive\r\n')
+                writer.write(b'\r\n')
+                await writer.drain()
+                await send_sse_state(emulator, sse_clients)
+                continue
+
+            # Static file serving
+            if path == '/':
+                path = '/index.html'
+
+            file_path = os.path.normpath(os.path.join(WEB_ROOT, path.lstrip('/')))
+            if not file_path.startswith(WEB_ROOT):
+                writer.write(b'HTTP/1.1 403 Forbidden\r\n'
+                             b'Connection: close\r\n\r\n')
+                await writer.drain()
+                break
+
+            if os.path.isfile(file_path):
+                content_type, _ = mimetypes.guess_type(file_path)
+                if content_type is None:
+                    content_type = 'application/octet-stream'
+                with open(file_path, 'rb') as f:
+                    body = f.read()
+                writer.write(('HTTP/1.1 200 OK\r\n'
+                              'Content-Type: %s\r\n'
+                              'Content-Length: %d\r\n'
+                              'Connection: keep-alive\r\n'
+                              '\r\n' % (content_type, len(body))).encode())
+                writer.write(body)
+                await writer.drain()
+                continue
+            else:
+                writer.write(b'HTTP/1.1 404 Not Found\r\n'
+                             b'Connection: close\r\n\r\n')
+                await writer.drain()
+                break
+    except (ConnectionError, asyncio.IncompleteReadError, asyncio.CancelledError):
+        pass
+    finally:
+        writer.close()
+
+
+async def send_sse_state(emulator, sse_clients):
+    if not sse_clients:
+        return
+    data = json.dumps(emulator.get_state())
+    message = ('data: %s\n\n' % data).encode()
+    dead = set()
+    for client in sse_clients:
+        try:
+            client.write(message)
+            await client.drain()
+        except (ConnectionError, asyncio.CancelledError):
+            dead.add(client)
+    sse_clients -= dead
+
+
+async def run_loop(emulator, sse_clients):
+    while True:
+        if emulator.running and emulator.speed_pct > 0:
+            emulator.step_batch()
+            await send_sse_state(emulator, sse_clients)
+            delay = emulator.throttle_delay()
+            await asyncio.sleep(delay)
+        else:
+            await asyncio.sleep(0.05)
 
 
 async def main(rom_path):
-    listing_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'listing.json')
+    listing_path = os.path.join(WEB_ROOT, 'listing.json')
     listing = Listing(listing_path) if os.path.exists(listing_path) else None
     emulator = Emulator(rom_path, listing)
 
-    # Start HTTP server in background thread
-    http_port = 8080
-    ws_port = 8765
-    http_thread = threading.Thread(target=serve_http, args=(http_port,), daemon=True)
-    http_thread.start()
+    sse_clients = set()
+
+    port = 8080
+    server = await asyncio.start_server(
+        lambda r, w: handle_connection(r, w, emulator, sse_clients),
+        'localhost', port
+    )
+
+    asyncio.create_task(run_loop(emulator, sse_clients))
 
     print("k0emu web frontend")
-    print("  HTTP: http://localhost:%d" % http_port)
-    print("  WebSocket: ws://localhost:%d" % ws_port)
-    print()
-    print("Open http://localhost:%d in a browser." % http_port)
+    print("  http://localhost:%d" % port)
 
-    async with websockets.serve(
-        lambda ws: handle_client(ws, emulator),
-        "localhost", ws_port
-    ):
-        await asyncio.Future()  # run forever
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
