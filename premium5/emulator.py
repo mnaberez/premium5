@@ -1,28 +1,14 @@
-"""
-k0emu web frontend server.
-
-Runs the 78K/0 emulator and serves a web UI over HTTP.
-The frontend receives emulator state via Server-Sent Events
-and sends commands via HTTP POST.
-
-Usage: pypy3 server.py <rom.bin>
-"""
-
 import sys
 import os
 import json
 import time
-import http.server
 import threading
 from collections import deque
 
-# Add k0emu to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'k0emu-main'))
-
 from k0dasm.disassemble import disassemble
-from k0emu.system import make_processor, populate_eeprom, configure_interrupts
 from k0emu.processor import RegisterPairs, Flags, RunState
-from k0emu.mfsw import MFSWTransmitter
+from premium5.system import make_processor, populate_eeprom, configure_interrupts
+from premium5.mfsw import MFSWTransmitter
 
 
 class Listing:
@@ -225,7 +211,7 @@ class Emulator:
             self.upd.key_data[cmd['byte']] &= ~cmd['mask']
 
         elif action == 'mfsw':
-            import k0emu.mfsw as mfsw
+            import premium5.mfsw as mfsw
             code = cmd.get('code')
             codes = {
                 'vol_down': mfsw.VOL_DOWN,
@@ -248,85 +234,3 @@ def emulator_thread(emulator):
             time.sleep(delay)
         else:
             time.sleep(0.05)
-
-
-WEB_ROOT = os.path.dirname(os.path.abspath(__file__))
-
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, directory=WEB_ROOT, **kwargs):
-        super().__init__(*args, directory=directory, **kwargs)
-
-    def do_GET(self):
-        if self.path == '/events':
-            self.handle_sse()
-            return
-        super().do_GET()
-
-    def do_POST(self):
-        if self.path == '/command':
-            self.handle_command()
-            return
-        self.send_error(404)
-
-    def handle_sse(self):
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/event-stream')
-        self.send_header('Cache-Control', 'no-cache')
-        self.send_header('Connection', 'keep-alive')
-        self.end_headers()
-
-        emulator = self.server.emulator
-        try:
-            while True:
-                with emulator.state_changed:
-                    emulator.state_changed.wait(timeout=0.1)
-                    data = json.dumps(emulator.get_state())
-                self.wfile.write(('data: %s\n\n' % data).encode())
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionError, OSError):
-            pass
-
-    def handle_command(self):
-        length = int(self.headers['Content-Length'])
-        body = self.rfile.read(length)
-        cmd = json.loads(body)
-
-        emulator = self.server.emulator
-        with emulator.lock:
-            emulator.handle_command(cmd)
-            emulator.state_changed.notify_all()
-
-        self.send_response(204)
-        self.send_header('Connection', 'keep-alive')
-        self.end_headers()
-
-    def log_request(self, code='-', size='-'):
-        if self.path == '/events':
-            return
-        super().log_request(code, size)
-
-
-def main(rom_path):
-    listing_path = os.path.join(WEB_ROOT, 'listing.json')
-    listing = Listing(listing_path) if os.path.exists(listing_path) else None
-    emulator = Emulator(rom_path, listing)
-
-    port = 8080
-    httpd = http.server.ThreadingHTTPServer(('', port), Handler)
-    httpd.emulator = emulator
-
-    emu_thread = threading.Thread(target=emulator_thread, args=(emulator,), daemon=True)
-    emu_thread.start()
-
-    print("k0emu web frontend")
-    print("  http://localhost:%d" % port)
-
-    httpd.serve_forever()
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.stderr.write(__doc__)
-        sys.exit(1)
-    main(sys.argv[1])
