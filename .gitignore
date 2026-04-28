@@ -1,0 +1,16 @@
+*.bin
+*.egg-info
+*.hex
+*.hlr
+*.ihx
+*.lmf
+*.lst
+*.map
+*.prn
+*.pyc
+*.rel
+*.sym
+__pycache__/
+build/
+dist/
+venv/
