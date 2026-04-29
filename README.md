@@ -1,12 +1,12 @@
 # premium5
 
-![Photo](./premium5/web/images/faceplate-935fm.png)
+[![Photo](./premium5/web/images/faceplate-935fm.png)](https://mikenaberezny.com/videos/premium5)
                        
-This project emulates the Volkswagen [Premium 5](https://github.com/mnaberez/vwradio/tree/main/reverse_engineering/delco/vw_premium_5) car radio made by Delco.  Built on [k0emu](https://github.com/mnaberez/k0emu) and [k0dasm](https://github.com/mnaberez/k0dasm), it runs all known versions of the radio's original firmware without patches.  Its purpose is to aid in continued reverse engineering of the radio and to help test firmware mods.
+This project emulates the Volkswagen [Premium 5](https://github.com/mnaberez/vwradio/tree/main/reverse_engineering/delco/vw_premium_5) car radio made by Delco.  Built on [k0emu](https://github.com/mnaberez/k0emu) and [k0dasm](https://github.com/mnaberez/k0dasm), it runs all known versions of the radio's original firmware without patches.  Its purpose is to aid in continued reverse engineering of the radio and to help test firmware mods.  
 
 Emulated components include the undocumented Renesas (NEC) µPD78F0831Y microcontroller (which turned out to be a subset of the [µPD78F0833Y](https://web.archive.org/web/20180328161019if_/https://www.renesas.com/en-us/doc/DocumentServer/021/U13892EJ2V0UM00.pdf)), the [µPD16432B](https://web.archive.org/web/20160611101704if_/http://archive.6502.org/datasheets/nec_upd16432b_2000_dec.pdf) LCD controller (SPI), and the STMicroelectronics M24C04 EEPROM (I2C).  A high-level emulation of a Multi-Function Steering Wheel (MFSW) is also implemented, allowing the radio's response to steering wheel controls to be tested.
 
-In its current state, the emulator prompts for the SAFE code on power up, and if the correct code is toggled in, unlocks and allows all modes to be entered.  For example, FM mode can be selected and the frequency changed.  The emulator does not produce audio, nor does it emulate the tape deck or CD changer.
+Watch the emulator run in [this video](https://mikenaberezny.com/videos/premium5): the radio prompts for the SAFE code on power up, and if the correct code is toggled in, unlocks and responds to all buttons.  For example, FM mode can be selected and the frequency changed.  The emulator does not produce audio, nor does it emulate the tape deck or CD changer.
 
 ## Features                                                     
 
