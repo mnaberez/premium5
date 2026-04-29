@@ -32,6 +32,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Connection', 'keep-alive')
         self.end_headers()
 
+        # If a write can't complete within 5 seconds (browser not reading),
+        # timeout.  EventSource will reconnect when browser wakes up.
+        self.request.settimeout(5)
+
         emulator = self.server.emulator
         try:
             while True:
