@@ -1,16 +1,16 @@
 from k0emu.devices import (MemoryDevice, RegisterFileDevice,
                            ProcessorStatusDevice,
-                           Port0Device, Port2Device, Port3Device,
-                           Port4Device, Port5Device, Port6Device,
-                           Port7Device, Port8Device, Port9Device,
                            ADCDevice, I2CControllerDevice, SPIControllerDevice,
                            InterruptControllerDevice,
                            WatchdogDevice, WatchTimerDevice,
                            FreeRunningTimerDevice)
 from k0emu.i2c import StubI2CTarget
+from k0emu.processor import Processor
+from premium5.devices import (Port0Device, Port2Device, Port3Device,
+                              Port4Device, Port5Device, Port6Device,
+                              Port7Device, Port8Device, Port9Device)
 from premium5.i2c import M24C04
 from premium5.spi import UPD16432B
-from k0emu.processor import Processor
 
 
 def make_processor():
