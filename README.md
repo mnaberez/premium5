@@ -20,7 +20,7 @@ Watch the emulator run in [this video](https://mikenaberezny.com/videos/premium5
 
 The emulator consists of two parts: the emulation backend written in Python and a web-based frontend.  Although the standard Python 3 interpreter (CPython) is supported, [PyPy](https://pypy.org) is required for real-time emulation at the original 4.19 MHz clock speed.  Install `premium5` under PyPy with:
 
-    pypy3 -m pip install premium5
+    pypy3 -m pip install git+https://github.com/mnaberez/premium5.git
                                                                                                                         
 ## Usage
 
