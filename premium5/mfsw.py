@@ -47,7 +47,9 @@ class MFSWTransmitter(object):
         self._waveform = []
 
     def send(self, key_code):
-        """Build a new MFSW packet for the given key code and transmit it."""
+        """Build a new MFSW packet for the given key code, convert it to a
+        waveform, then store the waveform on the instance, where it will be
+        clocked out on tick()."""
         if self.busy:
             raise MFSWBusyError()
 
@@ -70,7 +72,7 @@ class MFSWTransmitter(object):
             if step.cycles <= 0:
                 self._waveform.pop(0)
 
-        self._update_swc_out()
+            self._update_swc_out() # must be done on every cycle
 
     def _update_swc_out(self):
         if not self._waveform:
