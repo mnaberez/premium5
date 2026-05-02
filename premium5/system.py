@@ -34,7 +34,7 @@ def make_processor():
     register_file = RegisterFileDevice("register_file", high_speed=True)
     proc.bus.add_device(register_file, (0xFEE0, 0xFEFF))
 
-    from premium5.digital import LogicOutput
+    from premium5.digital import Level, LogicOutput
 
     p0 = Port0Device()
     proc.bus.add_device(p0, (0xFF00, 0xFF00), (0xFF20, 0xFF20), (0xFF30, 0xFF30),
@@ -42,8 +42,7 @@ def make_processor():
 
     # P0.1/INTP1: firmware checks this pin during power-on.
     # Must be HIGH or the power-on sequence fails.
-    p01_driver = LogicOutput()
-    p01_driver.set_high()
+    p01_driver = LogicOutput(Level.HIGH)
     p01_driver.bind(p0.pins[1].input)
 
     p2 = Port2Device()
@@ -71,8 +70,7 @@ def make_processor():
     proc.bus.add_device(p9, (0xFF09, 0xFF09), (0xFF29, 0xFF29))
 
     # P9.0 = S-Contact (ignition). Drive LOW = ignition off.
-    s_contact = LogicOutput()
-    s_contact.set_low()
+    s_contact = LogicOutput(Level.LOW)
     s_contact.bind(p9.pins[0].input)
 
     processor_status = ProcessorStatusDevice("processor_status")

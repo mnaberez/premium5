@@ -76,16 +76,43 @@ class LogicOutputTests(unittest.TestCase):
         out.set_level(Level.HIGH)
         self.assertTrue(inp.high)
 
+    def test_bind_multiple_inputs(self):
+        out = LogicOutput()
+        inp1 = LogicInput()
+        inp2 = LogicInput()
+        out.bind(inp1)
+        out.bind(inp2)
+        out.set_high()
+        self.assertTrue(inp1.high)
+        self.assertTrue(inp2.high)
+
+    def test_bind_same_input_twice_does_not_duplicate(self):
+        out = LogicOutput()
+        inp = LogicInput()
+        out.bind(inp)
+        out.bind(inp)
+        self.assertEqual(len(out._inputs), 1)
+
+    def test_bind_pushes_current_state_to_each(self):
+        out = LogicOutput()
+        out.set_high()
+        inp1 = LogicInput()
+        inp2 = LogicInput()
+        out.bind(inp1)
+        out.bind(inp2)
+        self.assertTrue(inp1.high)
+        self.assertTrue(inp2.high)
+
 
 class LogicInputTests(unittest.TestCase):
 
     def test_defaults_to_default_level(self):
-        inp = LogicInput(default=Level.HIGH)
+        inp = LogicInput(pull_level=Level.HIGH)
         self.assertTrue(inp.high)
 
-    def test_defaults_to_low_when_no_default_given(self):
+    def test_defaults_to_floating_when_no_pull_given(self):
         inp = LogicInput()
-        self.assertTrue(inp.low)
+        self.assertTrue(inp.floating)
 
     def test_notify_high(self):
         inp = LogicInput()
@@ -93,34 +120,34 @@ class LogicInputTests(unittest.TestCase):
         self.assertTrue(inp.high)
 
     def test_notify_low(self):
-        inp = LogicInput(default=Level.HIGH)
+        inp = LogicInput(pull_level=Level.HIGH)
         inp.notify(Level.LOW)
         self.assertTrue(inp.low)
 
     def test_floating_resolves_to_default(self):
-        inp = LogicInput(default=Level.HIGH)
+        inp = LogicInput(pull_level=Level.HIGH)
         inp.notify(Level.LOW)
         inp.notify(Level.FLOATING)
         self.assertTrue(inp.high)
 
-    def test_set_default_updates_resolved_level(self):
-        inp = LogicInput(default=Level.LOW)
+    def test_set_pull_level_updates_resolved_level(self):
+        inp = LogicInput(pull_level=Level.LOW)
         self.assertTrue(inp.low)
-        inp.set_default(Level.HIGH)
+        inp.set_pull_level(Level.HIGH)
         self.assertTrue(inp.high)
 
-    def test_set_default_does_not_fire_callbacks(self):
-        inp = LogicInput(default=Level.LOW)
+    def test_set_pull_level_does_not_fire_callbacks(self):
+        inp = LogicInput(pull_level=Level.LOW)
         calls = []
         inp.on_rising = lambda: calls.append('rising')
         inp.on_falling = lambda: calls.append('falling')
-        inp.set_default(Level.HIGH)
+        inp.set_pull_level(Level.HIGH)
         self.assertEqual(calls, [])
 
-    def test_set_default_ignored_when_driven(self):
-        inp = LogicInput(default=Level.LOW)
+    def test_set_pull_level_ignored_when_driven(self):
+        inp = LogicInput(pull_level=Level.LOW)
         inp.notify(Level.LOW)
-        inp.set_default(Level.HIGH)
+        inp.set_pull_level(Level.HIGH)
         self.assertTrue(inp.low)
 
     def test_on_rising_callback(self):
@@ -131,7 +158,7 @@ class LogicInputTests(unittest.TestCase):
         self.assertEqual(calls, ['rising'])
 
     def test_on_falling_callback(self):
-        inp = LogicInput(default=Level.HIGH)
+        inp = LogicInput(pull_level=Level.HIGH)
         calls = []
         inp.on_falling = lambda: calls.append('falling')
         inp.notify(Level.LOW)
@@ -153,10 +180,10 @@ class LogicInputTests(unittest.TestCase):
         inp.notify(Level.LOW)
         self.assertTrue(snap.high)
 
-    def test_snapshot_low(self):
+    def test_snapshot_floating(self):
         inp = LogicInput()
         snap = inp.snapshot()
-        self.assertTrue(snap.low)
+        self.assertTrue(snap.floating)
 
     def test_int_high_is_1(self):
         inp = LogicInput()
@@ -168,7 +195,7 @@ class LogicInputTests(unittest.TestCase):
         self.assertEqual(int(inp), 0)
 
     def test_int_floating_is_0(self):
-        inp = LogicInput(default=Level.FLOATING)
+        inp = LogicInput(pull_level=Level.FLOATING)
         self.assertEqual(int(inp), 0)
 
 

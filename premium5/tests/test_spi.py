@@ -17,7 +17,7 @@ def _make_upd():
     dat = LogicOutput()
     dat.bind(upd.dat_in)
 
-    dat_read = LogicInput(default=Level.LOW)
+    dat_read = LogicInput(pull_level=Level.LOW)
     upd.dat_out.bind(dat_read)
 
     return upd, stb, clk, dat, dat_read

@@ -8,7 +8,7 @@ from collections import deque
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
 from premium5.system import make_processor, populate_eeprom, configure_interrupts
-from premium5.digital import LogicOutput, Inverter
+from premium5.digital import Level, LogicOutput, Inverter
 from premium5.mfsw import MFSWTransmitter
 
 
@@ -53,12 +53,10 @@ class Emulator:
         self.mfsw.swc_out.bind(inverter.input)
         inverter.output.bind(p0.pins[0].input)
 
-        self._power_key = LogicOutput()
-        self._power_key.set_high()
+        self._power_key = LogicOutput(Level.HIGH)
         self._power_key.bind(p0.pins[4].input)
 
-        self._p02_driver = LogicOutput()
-        self._p02_driver.set_high()
+        self._p02_driver = LogicOutput(Level.HIGH)
         self._p02_driver.bind(p0.pins[2].input)
 
         self.running = False

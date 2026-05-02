@@ -14,9 +14,9 @@ class UPD16432B(object):
 
     def __init__(self):
         # electrical interface
-        self.stb_in = LogicInput(default=Level.LOW)
-        self.clk_in = LogicInput(default=Level.HIGH)
-        self.dat_in = LogicInput(default=Level.LOW)
+        self.stb_in = LogicInput(pull_level=Level.LOW)
+        self.clk_in = LogicInput(pull_level=Level.HIGH)
+        self.dat_in = LogicInput(pull_level=Level.LOW)
         self.dat_out = LogicOutput()
 
         self.stb_in.on_rising  = self._on_stb_rising

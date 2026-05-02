@@ -41,9 +41,7 @@ class MFSWTransmitter(object):
 
     def __init__(self):
         # electrical interface
-        self.swc_out = LogicOutput()
-
-        self.swc_out.set_high()
+        self.swc_out = LogicOutput(Level.HIGH)
         self._waveform = []
 
     def send(self, key_code):

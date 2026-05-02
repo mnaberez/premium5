@@ -5,22 +5,26 @@ class Level:
 
 
 class LogicOutput(object):
-    """Drives a logic level. Owner calls set_high/set_low/set_floating.
-    When the state changes, pushes the new value to the bound LogicInput."""
+    """Drives a logic level.  Inputs are bound to it.  Whenever it
+    level changes, inputs are notified."""
 
-    def __init__(self):
-        self._state = Level.FLOATING
-        self._input = None
+    def __init__(self, level=Level.FLOATING):
+        self._level = level
+        self._inputs = []
 
     def bind(self, logic_input):
-        self._input = logic_input
-        self._input.notify(self._state)
+        if logic_input not in self._inputs:
+            self._inputs.append(logic_input)
+            logic_input.notify(self._level)
+
+    # set the level
 
     def set_level(self, level):
-        if level != self._state:
-            self._state = level
-            if self._input is not None:
-                self._input.notify(level)
+        if level != self._level:
+            self._level = level
+
+            for logic_input in self._inputs:
+                logic_input.notify(level)
 
     def set_high(self):
         self.set_level(Level.HIGH)
@@ -31,36 +35,56 @@ class LogicOutput(object):
     def set_floating(self):
         self.set_level(Level.FLOATING)
 
+    # interrogate the level
+
     @property
     def high(self):
-        return self._state == Level.HIGH
+        return self._level == Level.HIGH
 
     @property
     def low(self):
-        return self._state == Level.LOW
+        return self._level == Level.LOW
 
     @property
     def floating(self):
-        return self._state == Level.FLOATING
+        return self._level == Level.FLOATING
 
 
 class LogicInput(object):
-    """Receives a logic level from a bound LogicOutput.
-    Has a default (pull-up/pull-down) for when the output is FLOATING.
-    Fires on_rising/on_falling callbacks on transitions."""
+    """Receives a logic level from a bound LogicOutput.  Optionally
+    simulates pull-up/down resistors and fires callbacks on 
+    edge transitions."""
 
     _no_callback = staticmethod(lambda: None)
 
-    def __init__(self, default=Level.LOW):
-        self._default_level = default
+    def __init__(self, pull_level=Level.FLOATING):
+        '''Use pull_level to simulate pull-up/pull-down resistor behavior:
+
+           - Level.FLOATING: Floating input keeps floating. (default)
+           - Level.HIGH:     Floating input becomes HIGH.
+           - Level.LOW:      Floating input becomes LOW.
+        '''
+        # init internal state
         self._incoming_level = Level.FLOATING
-        self._resolved_level = default
-        self.on_rising = self._no_callback
+        self.set_pull_level(pull_level)
+
+        # callbacks
+        self.on_rising  = self._no_callback
         self.on_falling = self._no_callback
 
-    def set_default(self, level):
-        self._default_level = level
+    def set_pull_level(self, level):
+        '''Change the pull-up behavior'''
+        self._pull_level = level
         self._resolved_level = self._resolve_level()
+
+    def snapshot(self):
+        """Take a snapshot of our current level so the caller can
+        save it and use it in comparisons later."""
+        snap = LogicInput(pull_level=self._pull_level)
+        snap.notify(self._incoming_level)
+        return snap
+
+    # interrogate the level
 
     @property
     def high(self):
@@ -77,9 +101,11 @@ class LogicInput(object):
     def __int__(self):
         return int(self._resolved_level == Level.HIGH)
 
+    # LogicOutput notifies us when the level changes
+
     def notify(self, incoming_level):
-        """The LogicOutput we are connected to is notifying us of its level.
-        It may or may not have changed."""
+        """The LogicOutput we are connected to is notifying us of
+        its level.  It may or may not have changed."""
         self._incoming_level = incoming_level
 
         old_level = self._resolved_level
@@ -91,25 +117,22 @@ class LogicInput(object):
             elif self._resolved_level == Level.LOW:
                 self.on_falling()
 
-    def snapshot(self):
-        """Take a snapshot of our current level so the caller can save it
-        and use it in comparisons later."""
-        snap = LogicInput(default=self._resolved_level)
-        snap._incoming_level = self._resolved_level
-        snap._resolved_level = self._resolved_level
-        return snap
+    # internal helpers
 
     def _resolve_level(self):
         if self._incoming_level == Level.FLOATING:
-            return self._default_level
+            return self._pull_level
         return self._incoming_level
 
 
 class Inverter(object):
-    """Inverts the signal: HIGH becomes LOW, LOW becomes HIGH."""
+    """Component that inverts its input"""
 
     def __init__(self):
+        # electrical connections
         self.input = LogicInput()
         self.output = LogicOutput()
+
+        # callbacks from input change output
         self.input.on_rising = self.output.set_low
         self.input.on_falling = self.output.set_high

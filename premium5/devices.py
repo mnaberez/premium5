@@ -104,9 +104,9 @@ class _PortDevicePin(object):
 
     def set_pullup(self, enabled):
         if enabled:
-            self.input.set_default(Level.HIGH)
+            self.input.set_pull_level(Level.HIGH)
         else:
-            self.input.set_default(Level.FLOATING)
+            self.input.set_pull_level(Level.FLOATING)
 
     def set_output_level(self, level):
         self._output_level = level
@@ -346,10 +346,9 @@ class SPIControllerDevice(BaseDevice):
     def __init__(self, name):
         super().__init__(name)
         self.size = 2
-        self.clk_out = LogicOutput()
-        self.clk_out.set_high()
+        self.clk_out = LogicOutput(Level.HIGH)
         self.dat_out = LogicOutput()
-        self.dat_in = LogicInput(default=Level.LOW)
+        self.dat_in = LogicInput(pull_level=Level.LOW)
         self.reset()
 
     def reset(self):
