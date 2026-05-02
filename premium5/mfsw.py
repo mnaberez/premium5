@@ -9,6 +9,8 @@ by 32 data bits (4 bytes LSB-first), then a trailing pulse.
 Timing is in CPU clock ticks at fx = 4.19 MHz.
 """
 
+from premium5.digital import LogicOutput
+
 # Key codes (protocol values, transmitted LSB-first)
 VOL_DOWN = 0x00
 VOL_UP   = 0x01
@@ -20,10 +22,9 @@ class MFSWTransmitter(object):
     """Clocks out MFSW packets one tick at a time.
 
     Call send(key_code) to start a packet.  Call tick() on every
-    CPU clock cycle.  Read the wire property for the current line state.
+    CPU clock cycle.
 
-    The wire output is active-low (True=HIGH=idle, False=LOW=active).
-    The caller is responsible for inverting it before driving P0.0.
+    The swc_out output is active-low (HIGH=idle, LOW=active).
     """
 
     # Packet header bytes
@@ -39,6 +40,10 @@ class MFSWTransmitter(object):
     PACKET_STOP_LOW_CYCLES   =  1000  # ~0.24 ms (guess; just needs to trigger the Schmitt trigger)
 
     def __init__(self):
+        # electrical interface
+        self.swc_out = LogicOutput()
+
+        self.swc_out.set_high()
         self._waveform = []
 
     def send(self, key_code):
@@ -65,14 +70,15 @@ class MFSWTransmitter(object):
             if step.cycles <= 0:
                 self._waveform.pop(0)
 
-    @property
-    def wire(self):
-        """Get the current state of the output line.  If no MFSW packet
-        is being transmitted, the line idles high (True)."""
-        if not self._waveform:
-            return True  # idle HIGH
+        self._update_swc_out()
 
-        return self._waveform[0].level
+    def _update_swc_out(self):
+        if not self._waveform:
+            self.swc_out.set_high()
+        elif self._waveform[0].level:
+            self.swc_out.set_high()
+        else:
+            self.swc_out.set_low()
 
     @property
     def busy(self):

@@ -110,7 +110,6 @@ class EmulatorState {
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
         this.activePictographs = EmulatorState._decodePictographs(data.pictograph_ram);
         this.led = data.led;
-        this.t30 = data.t30;
 
         // Memory dumps
         this.expRam = data.exp_ram;

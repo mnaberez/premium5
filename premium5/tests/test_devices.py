@@ -10,7 +10,6 @@ class Port0DeviceTests(unittest.TestCase):
 
     def test_has_edge_detection(self):
         p0 = Port0Device()
-        self.assertTrue(hasattr(p0, 'set_external_input'))
         self.assertTrue(hasattr(p0, '_egp'))
         self.assertTrue(hasattr(p0, '_egn'))
 

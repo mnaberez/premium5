@@ -6,7 +6,7 @@ class MFSWTransmitterTests(unittest.TestCase):
 
     def test_wire_idles_high(self):
         tx = MFSWTransmitter()
-        self.assertTrue(tx.wire)
+        self.assertTrue(tx.swc_out.high)
 
     def test_not_busy_initially(self):
         tx = MFSWTransmitter()
@@ -26,33 +26,35 @@ class MFSWTransmitterTests(unittest.TestCase):
     def test_wire_goes_low_on_send(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        self.assertFalse(tx.wire)
+        tx.tick()
+        self.assertTrue(tx.swc_out.low)
 
     def test_wire_returns_to_idle_after_packet(self):
         tx = MFSWTransmitter()
         tx.send(UP)
         for _ in range(10_000_000):
             tx.tick()
-        self.assertTrue(tx.wire)
+        self.assertTrue(tx.swc_out.high)
         self.assertFalse(tx.busy)
 
     def test_start_bit_timing(self):
         tx = MFSWTransmitter()
         tx.send(UP)
+        tx.tick()
         # Wire starts LOW (start bit active)
-        self.assertFalse(tx.wire)
+        self.assertTrue(tx.swc_out.low)
         # Tick through the start LOW period
-        for _ in range(37709):
+        for _ in range(37708):
             tx.tick()
-            self.assertFalse(tx.wire)
-        tx.tick()  # 37710th tick: transition to HIGH
-        self.assertTrue(tx.wire)
+            self.assertTrue(tx.swc_out.low)
+        tx.tick()  # transition to HIGH
+        self.assertTrue(tx.swc_out.high)
 
     def test_tick_with_cycles(self):
         tx = MFSWTransmitter()
         tx.send(UP)
         tx.tick(37710)
-        self.assertTrue(tx.wire)  # past start LOW, now in start HIGH
+        self.assertTrue(tx.swc_out.high)  # past start LOW, now in start HIGH
 
     def test_packet_produces_correct_bits(self):
         """Capture all wire transitions and verify the bit pattern."""
@@ -91,31 +93,27 @@ class MFSWTransmitterTests(unittest.TestCase):
         tx = MFSWTransmitter()
         for _ in range(1000):
             tx.tick()
-        self.assertTrue(tx.wire)
+        self.assertTrue(tx.swc_out.high)
         self.assertFalse(tx.busy)
 
     def _receive_packet(self, tx, key_code):
-        """Send a packet, capture edges, decode 4 bytes.
-        Each edge entry is (ticks_at_this_level, new_level_after_transition).
-        edges[0] = start LOW period, edges[1] = start HIGH period,
-        edges[2:] = data bit pairs (LOW pulse, HIGH gap)."""
+        """Send a packet, capture edges, decode 4 bytes."""
         tx.send(key_code)
+        tx.tick()
         edges = []
-        prev = tx.wire
+        prev = tx.swc_out.high
         total = 0
         for _ in range(10_000_000):
             tx.tick()
             total += 1
-            if tx.wire != prev:
+            if tx.swc_out.high != prev:
                 edges.append((total, prev))
                 total = 0
-                prev = tx.wire
+                prev = tx.swc_out.high
             if not tx.busy:
                 if total > 0:
                     edges.append((total, prev))
                 break
-        # edges: (duration, wire_level_during_that_period)
-        # [0]=start LOW, [1]=start HIGH, [2:]=data bit pairs (LOW, HIGH)
         bit_edges = edges[2:]
         bits = []
         for i in range(0, 64, 2):

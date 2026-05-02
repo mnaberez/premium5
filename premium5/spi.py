@@ -1,75 +1,108 @@
-from k0emu.spi import BaseSPITarget
+from premium5.digital import LogicInput, LogicOutput, Level
 
 
-class UPD16432B(BaseSPITarget):
+class UPD16432B(object):
     """NEC uPD16432B LCD controller.
 
-    Processes SPI command packets and updates internal RAM areas
-    as the uPD16432B would.  Also provides key scan data.
+    Receives SPI data at the line level: STB for framing, CLK for
+    bit timing, DAT for data.  Shifts in bits on rising CLK edges
+    and processes complete bytes through the command state machine.
+
+    For key scan, shifts out response bits on DAT_OUT on falling
+    CLK edges.
     """
 
     def __init__(self):
+        # electrical interface
+        self.stb_in = LogicInput(default=Level.LOW)
+        self.clk_in = LogicInput(default=Level.HIGH)
+        self.dat_in = LogicInput(default=Level.LOW)
+        self.dat_out = LogicOutput()
+
+        # buffers
         self.display_ram = bytearray(0x19)
         self.pictograph_ram = bytearray(0x08)
         self.chargen_ram = bytearray(7 * 0x10)
         self.led_ram = bytearray(1)
         self.key_data = bytearray(4)
 
-        self._display_pixels = None
-        self._current_ram = None
+        # shift registers
+        self._shift_in = 0x00
+        self._shift_out = 0x00
+        self._shift_count = 0
 
-        self._selected = False
+        # internal state
+        self._prev_stb = self.stb_in.snapshot()
+        self._prev_clk = self.clk_in.snapshot()
+        self._current_ram = None
         self._address = 0
         self._increment = False
         self._key_index = 0
-        self._exc_func = self._exc_command
+        self._display_pixels = None
+        self._on_byte_func = self._on_byte_command
 
-    def spi_select(self, selected):
-        if selected == self._selected:
-            return
+    def tick(self, cycles=1):
+        # stb_in
+        if self._prev_stb.low and self.stb_in.high:  # rising edge
+            self._on_byte_func = self._on_byte_command
+            self._shift_in  = 0x00
+            self._shift_out = 0x00
+            self._shift_count = 0
+        self._prev_stb = self.stb_in.snapshot()
 
-        self._selected = selected
-        if selected:  # rising edge (asserted)
-            self._exc_func = self._exc_command
+        # clk_in
+        if self.stb_in.high: # chip enabled
+            if self._prev_clk.low and self.clk_in.high:  # rising edge
+                self._shift_bit_in()
 
-    def spi_exchange(self, rx_byte):
-        if not self._selected:
-            return 0x00
-        return self._exc_func(rx_byte)
+            if self._prev_clk.high and self.clk_in.low:  # falling edge
+                self._shift_bit_out()
 
-    def _exc_command(self, rx_byte):
-        """ first byte received is a command """
+        self._prev_clk = self.clk_in.snapshot()
+
+    def _shift_bit_in(self):
+        """Rising edge: shift in a bit"""
+        self._shift_in = (self._shift_in << 1) | int(self.dat_in)
+        self._shift_count += 1
+        if self._shift_count == 8:
+            self._on_byte_func(self._shift_in & 0xFF)
+            self._shift_in = 0x00
+            self._shift_count = 0
+
+    def _shift_bit_out(self):
+        """Falling edge: shift out a bit"""
+        if (self._shift_out >> (7 - self._shift_count)) & 1:
+            self.dat_out.set_high()
+        else:
+            self.dat_out.set_low()
+
+    def _on_byte_command(self, rx_byte):
         if (rx_byte & 0xC7) == 0x44:  # key data request
             self._key_index = 0
-            self._exc_func = self._exc_keys
+            self._shift_out = self.key_data[self._key_index]
+            self._on_byte_func = self._on_byte_keys
         else:
             cmd_type = rx_byte & 0xC0
             if cmd_type == 0x80:
                 self._process_address_setting_cmd(rx_byte)
-                self._exc_func = self._exc_data
+                self._on_byte_func = self._on_byte_data
             elif cmd_type == 0x40:
                 self._process_data_setting_cmd(rx_byte)
-                self._exc_func = self._exc_data
+                self._on_byte_func = self._on_byte_data
             else:
-                self._exc_func = self._exc_unknown
-        return 0x00
+                self._on_byte_func = self._on_byte_unknown
 
-    def _exc_data(self, rx_byte):
-        """ byte received after data setting command byte"""
+    def _on_byte_data(self, rx_byte):
         if self._current_ram is not None:
             self._write_data_byte(rx_byte)
-        return 0x00
 
-    def _exc_keys(self, rx_byte):
-        """ byte received after key data request byte """
-        value = self.key_data[self._key_index]
+    def _on_byte_keys(self, rx_byte):
         self._key_index += 1
-        self._key_index %= len(self.key_data) # wrap behavior is a guess
-        return value
+        self._key_index %= len(self.key_data)
+        self._shift_out = self.key_data[self._key_index]
 
-    def _exc_unknown(self, rx_byte):
-        """ byte received after unknown command byte """
-        return 0x00
+    def _on_byte_unknown(self, rx_byte):
+        pass
 
     # internal helpers
 
@@ -453,3 +486,5 @@ def _encode_charset(text):
     return tuple(data)
 
 CHARSET_VW_PREMIUM_5 = _encode_charset(_CHARSET_VW_PREMIUM_5)
+
+

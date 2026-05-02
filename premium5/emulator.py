@@ -8,6 +8,7 @@ from collections import deque
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
 from premium5.system import make_processor, populate_eeprom, configure_interrupts
+from premium5.digital import LogicOutput, Inverter
 from premium5.mfsw import MFSWTransmitter
 
 
@@ -41,9 +42,25 @@ class Emulator:
         populate_eeprom(self.proc)
         self.proc.bus.reset()
         configure_interrupts(self.proc)
-        self.upd = self.proc.bus.device("csi30").target
+        csi30 = self.proc.bus.device("csi30")
+        self.upd = csi30.upd
+
+        p0 = self.proc.bus.device("p0")
+        self._p3 = self.proc.bus.device("p3")
+
         self.mfsw = MFSWTransmitter()
-        self._p0 = self.proc.bus.device("p0")
+        inverter = Inverter()
+        self.mfsw.swc_out.bind(inverter.input)
+        inverter.output.bind(p0.pins[0].input)
+
+        self._power_key = LogicOutput()
+        self._power_key.set_high()
+        self._power_key.bind(p0.pins[4].input)
+
+        self._p02_driver = LogicOutput()
+        self._p02_driver.set_high()
+        self._p02_driver.bind(p0.pins[2].input)
+
         self.running = False
         self.steps_per_frame = 50000
         self.potential_mhz = 0.0
@@ -70,8 +87,7 @@ class Emulator:
 
         display_pixels = bytes(self.upd.get_display_pixels()).hex()
         pictograph_ram = bytes(self.upd.pictograph_ram).hex()
-        led = not bool(proc.bus.read(0xFF03) & 0x08)
-        t30 = proc.bus.read(0xF18D) * 0.1
+        led = self._p3.pins[3].low  # led is active low
 
         wall_since_epoch = time.monotonic() - self._epoch_time
         if wall_since_epoch > 0 and self.running:
@@ -102,7 +118,6 @@ class Emulator:
             'display_pixels': display_pixels,
             'pictograph_ram': pictograph_ram,
             'led': led,
-            't30': round(t30, 1),
             'real_mhz': round(self.real_mhz, 2),
             'potential_mhz': round(self.potential_mhz, 2),
             'exp_ram': bytes(exp_ram).hex(),
@@ -130,10 +145,10 @@ class Emulator:
             hex_str = "%02x" % self.proc.bus.read(pc)
             self._disasm_history.append({'addr': pc, 'hex': hex_str, 'inst': '???'})
 
-    def _tick_mfsw(self):
+    def _tick_peripherals(self):
         cycles = self.proc.inst_cycles
         self.mfsw.tick(cycles)
-        self._p0.set_external_input(0, not self.mfsw.wire)
+        self.upd.tick(cycles)
 
     def step_batch(self):
         t0 = time.monotonic()
@@ -143,7 +158,7 @@ class Emulator:
             if self.proc.run_state != RunState.HALTED:
                 recent_pcs.append(self.proc.pc)
             self.proc.step()
-            self._tick_mfsw()
+            self._tick_peripherals()
         for pc in recent_pcs:
             self._disasm_at(pc)
         elapsed = time.monotonic() - t0
@@ -174,7 +189,7 @@ class Emulator:
     def step_one(self):
         self._disasm_at(self.proc.pc)
         self.proc.step()
-        self._tick_mfsw()
+        self._tick_peripherals()
 
     def handle_command(self, cmd):
         action = cmd.get('action')
@@ -199,10 +214,9 @@ class Emulator:
             self._epoch_cycles = self.proc.total_cycles
 
         elif action == 'power_key':
-            p0 = self.proc.bus.device("p0")
-            p0.set_external_input(4, True)
-            p0.set_external_input(2, False)
-            p0.set_external_input(4, False)
+            self._power_key.set_high()   # release (ensures edge on re-press)
+            self._p02_driver.set_low()   # P0.2 low (wake)
+            self._power_key.set_low()    # P0.4 low (key pressed)
 
         elif action == 'key_down':
             self.upd.key_data[cmd['byte']] |= cmd['mask']

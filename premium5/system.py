@@ -1,6 +1,6 @@
 from k0emu.devices import (MemoryDevice, RegisterFileDevice,
                            ProcessorStatusDevice,
-                           ADCDevice, I2CControllerDevice, SPIControllerDevice,
+                           ADCDevice, I2CControllerDevice,
                            InterruptControllerDevice,
                            WatchdogDevice, WatchTimerDevice,
                            FreeRunningTimerDevice)
@@ -9,6 +9,7 @@ from k0emu.processor import Processor
 from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
                               Port7Device, Port8Device, Port9Device)
+from premium5.devices import SPIControllerDevice
 from premium5.i2c import M24C04
 from premium5.spi import UPD16432B
 
@@ -82,8 +83,11 @@ def make_processor():
 
     upd = UPD16432B()
     csi30 = SPIControllerDevice("csi30")
-    csi30.target = upd
-    p4.on_pin_change(lambda pin_state: upd.spi_select(bool(pin_state & 0x80)))
+    p4.pins[7].output.bind(upd.stb_in)
+    csi30.clk_out.bind(upd.clk_in)
+    csi30.dat_out.bind(upd.dat_in)
+    upd.dat_out.bind(csi30.dat_in)
+    csi30.upd = upd
     proc.bus.add_device(csi30, (0xFF1A, 0xFF1A), (0xFFB0, 0xFFB0))
     intc.connect(csi30, csi30.INT_TRANSFER, intc.INTCSI30)
 
@@ -195,6 +199,3 @@ def configure_interrupts(proc):
     # Set INTWTNI0 to high priority (clear bit 0 of PR1L)
     pr1l = intc.read(intc.PR1L)
     intc.write(intc.PR1L, pr1l & 0xFE)
-
-
-
