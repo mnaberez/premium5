@@ -34,9 +34,17 @@ def make_processor():
     register_file = RegisterFileDevice("register_file", high_speed=True)
     proc.bus.add_device(register_file, (0xFEE0, 0xFEFF))
 
+    from premium5.digital import LogicOutput
+
     p0 = Port0Device()
     proc.bus.add_device(p0, (0xFF00, 0xFF00), (0xFF20, 0xFF20), (0xFF30, 0xFF30),
                             (0xFF48, 0xFF48), (0xFF49, 0xFF49))
+
+    # P0.1/INTP1: firmware checks this pin during power-on.
+    # Must be HIGH or the power-on sequence fails.
+    p01_driver = LogicOutput()
+    p01_driver.set_high()
+    p01_driver.bind(p0.pins[1].input)
 
     p2 = Port2Device()
     proc.bus.add_device(p2, (0xFF02, 0xFF02), (0xFF22, 0xFF22), (0xFF32, 0xFF32))
@@ -61,13 +69,11 @@ def make_processor():
 
     p9 = Port9Device()
     proc.bus.add_device(p9, (0xFF09, 0xFF09), (0xFF29, 0xFF29))
-    # P9.0 (S-Contact) is undriven = off.  P9.1-P9.7 are driven HIGH
-    # by external voltage dividers / pull-ups on the PCB.
-    from premium5.digital import LogicOutput
-    for i in range(1, 8):
-        driver = LogicOutput()
-        driver.set_high()
-        driver.bind(p9.pins[i].input)
+
+    # P9.0 = S-Contact (ignition). Drive LOW = ignition off.
+    s_contact = LogicOutput()
+    s_contact.set_low()
+    s_contact.bind(p9.pins[0].input)
 
     processor_status = ProcessorStatusDevice("processor_status")
     proc.bus.add_device(processor_status, (0xFF1C, 0xFF1E))

@@ -28,7 +28,7 @@ class Port9DeviceTests(unittest.TestCase):
         p9 = Port9Device()
         self.assertEqual(p9.name, "p9")
 
-    def test_pins_default_low_no_pullups(self):
+    def test_undriven_pins_default_floating(self):
         p9 = Port9Device()
         for i in range(8):
             self.assertFalse(p9.pins[i].high)

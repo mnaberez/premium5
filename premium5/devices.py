@@ -153,7 +153,7 @@ class _PortDevicePin(object):
 class Port0Device(PortDevice):
     """Port 0: 8-bit I/O port with external interrupt edge detection.
     P00/INTP0: input  MFSW (inverted; from HEF40106BT)
-    P01/INTP1: input  Unknown
+    P01/INTP1: input  Unknown (must be high or firmware power-on fails)
     P02/INTP2: input  Unknown (must be low or firmware stays in halt/sleep loop)
     P03/INTP3: input  Unknown (not used as INTP3)
     P04/INTP4: input  POWER key (0=pressed)
