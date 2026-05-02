@@ -28,16 +28,7 @@ class Port9DeviceTests(unittest.TestCase):
         p9 = Port9Device()
         self.assertEqual(p9.name, "p9")
 
-    def test_s_contact_defaults_off(self):
+    def test_pins_default_low_no_pullups(self):
         p9 = Port9Device()
-        self.assertEqual(p9.external_inputs & 0x01, 0)
-
-    def test_other_pins_default_high(self):
-        p9 = Port9Device()
-        self.assertEqual(p9.external_inputs & 0xFE, 0xFE)
-
-    def test_reset_restores_s_contact_off(self):
-        p9 = Port9Device()
-        p9.external_inputs = 0xFF
-        p9.reset()
-        self.assertEqual(p9.external_inputs & 0x01, 0)
+        for i in range(8):
+            self.assertFalse(p9.pins[i].high)

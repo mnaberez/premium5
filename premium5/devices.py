@@ -1,23 +1,72 @@
-from k0emu.devices import BaseDevice, BasePortDevice, PortWithPullupsDevice, PortWithEdgeDetectionDevice
+from k0emu.devices import BaseDevice
 from premium5.digital import LogicInput, LogicOutput, Level
 
 
-class Port2Device(PortWithPullupsDevice):
-    """Port 2: 8-bit I/O port.
-    P20/SI31:  input   CDC DI (inverted; from HEF40106BT)
-    P21/SO31:  output  Unknown
-    P22/SCK31: output  CDC CLK (inverted; from HEF40106BT)
-    P23:       input   Tape METAL sense (1=metal)
-    P24/RxD0:  input   L9637D RX (K-line)
-    P25/TxD0:  output  L9637D TX (K-line)
-    P26:       output  K-line resistor (0=disconnected, 1=connected)
-    P27:       output  Unknown
-    Pull-up resistors on all pins."""
-    def __init__(self):
-        super().__init__("p2")
+class PortDevice(BaseDevice):
+    """GPIO port with 8 configurable pins
+    """
 
+    DATA = 0     # DATA (Pn)    output latch write, pin state read
+    MODE = 1     # MODE (PMn)   0=output, 1=input
+    PULLUP = 2   # PULLUP (PUn) 0=no pull-up, 1=pull-up
 
-class PortPin(object):
+    def __init__(self, name):
+        super().__init__(name)
+        self.size = 3
+
+        # internal state
+        self._latch = 0x00   # output latch
+        self._mode = 0xFF    # mode (0xFF=all inputs)
+        self._pullup = 0x00  # pull-ups (0x00=no pull-ups)
+
+        # i/o pins
+        self.pins = []
+        for i in range(8):
+            self.pins.append(_PortDevicePin())
+
+    def reset(self):
+        self._latch = 0x00
+        self._mode = 0xFF
+        self._pullup = 0x00
+        for pin_idx in range(8):
+            self._configure_pin(pin_idx)
+
+    def _configure_pin(self, pin_idx):
+        pin = self.pins[pin_idx]
+        mask = 1 << pin_idx
+        pin.set_pullup(bool(self._pullup & mask))
+        if self._mode & mask:
+            pin.set_mode(_PortDevicePin.INPUT)
+        else:
+            pin.set_mode(_PortDevicePin.OUTPUT)
+        if self._latch & mask:
+            pin.set_output_level(Level.HIGH)
+        else:
+            pin.set_output_level(Level.LOW)
+
+    def read(self, register):
+        self._check_bounds(register)
+        if register == self.DATA:
+            result = 0
+            for i in range(8):
+                result |= (int(self.pins[i]) << i)
+            return result
+        elif register == self.MODE:
+            return self._mode
+        return self._pullup
+
+    def write(self, register, value):
+        self._check_bounds(register)
+        if register == self.DATA:
+            self._latch = value
+        elif register == self.MODE:
+            self._mode = value
+        else:
+            self._pullup = value
+        for pin_idx in range(8):
+            self._configure_pin(pin_idx)
+
+class _PortDevicePin(object):
     """A bidirectional port pin with a LogicOutput (port driver)
     and a LogicInput (external input).
 
@@ -101,72 +150,6 @@ class PortPin(object):
             self.output.set_low()
 
 
-class PortDevice(BaseDevice):
-    """GPIO port with PortPins.
-
-    Registers:
-        0: DATA (Pn)   - output latch write, pin state read
-        1: MODE (PMn)   - 0=output, 1=input
-        2: PULLUP (PUn) - 0=no pull-up, 1=pull-up
-    """
-
-    DATA = 0
-    MODE = 1
-    PULLUP = 2
-
-    def __init__(self, name):
-        super().__init__(name)
-        self.size = 3
-        self._latch = 0x00
-        self._mode = 0xFF  # all inputs
-        self._pullup = 0x00
-        self.pins = []
-        for i in range(8):
-            self.pins.append(PortPin())
-
-    def reset(self):
-        self._latch = 0x00
-        self._mode = 0xFF
-        self._pullup = 0x00
-        for pin_idx in range(8):
-            self._configure_pin(pin_idx)
-
-    def _configure_pin(self, pin_idx):
-        pin = self.pins[pin_idx]
-        mask = 1 << pin_idx
-        pin.set_pullup(bool(self._pullup & mask))
-        if self._mode & mask:
-            pin.set_mode(PortPin.INPUT)
-        else:
-            pin.set_mode(PortPin.OUTPUT)
-        if self._latch & mask:
-            pin.set_output_level(Level.HIGH)
-        else:
-            pin.set_output_level(Level.LOW)
-
-    def read(self, register):
-        self._check_bounds(register)
-        if register == self.DATA:
-            result = 0
-            for i in range(8):
-                result |= (int(self.pins[i]) << i)
-            return result
-        elif register == self.MODE:
-            return self._mode
-        return self._pullup
-
-    def write(self, register, value):
-        self._check_bounds(register)
-        if register == self.DATA:
-            self._latch = value
-        elif register == self.MODE:
-            self._mode = value
-        else:
-            self._pullup = value
-        for pin_idx in range(8):
-            self._configure_pin(pin_idx)
-
-
 class Port0Device(PortDevice):
     """Port 0: 8-bit I/O port with external interrupt edge detection.
     P00/INTP0: input  MFSW (inverted; from HEF40106BT)
@@ -225,6 +208,21 @@ class Port0Device(PortDevice):
             self.bus.interrupt(self, pin_idx)
 
 
+class Port2Device(PortDevice):
+    """Port 2: 8-bit I/O port.
+    P20/SI31:  input   CDC DI (inverted; from HEF40106BT)
+    P21/SO31:  output  Unknown
+    P22/SCK31: output  CDC CLK (inverted; from HEF40106BT)
+    P23:       input   Tape METAL sense (1=metal)
+    P24/RxD0:  input   L9637D RX (K-line)
+    P25/TxD0:  output  L9637D TX (K-line)
+    P26:       output  K-line resistor (0=disconnected, 1=connected)
+    P27:       output  Unknown
+    Pull-up resistors on all pins."""
+    def __init__(self):
+        super().__init__("p2")
+
+
 class Port3Device(PortDevice):
     """Port 3: 7-bit I/O port (bit 7 fixed at 1).
     P30/SI30:  input   uPD16432B DAT in
@@ -254,7 +252,7 @@ class Port4Device(PortDevice):
         super().__init__("p4")
 
 
-class Port5Device(PortWithPullupsDevice):
+class Port5Device(PortDevice):
     """Port 5: 8-bit I/O port, TTL level input.
     P50: output  Unknown
     P51: output  Unknown
@@ -269,7 +267,7 @@ class Port5Device(PortWithPullupsDevice):
         super().__init__("p5")
 
 
-class Port6Device(PortWithPullupsDevice):
+class Port6Device(PortDevice):
     """Port 6: 4-bit I/O port (P64-P67 only, lower 4 bits read as 1).
     P64: unknown Unknown
     P65: unknown Unknown
@@ -280,7 +278,7 @@ class Port6Device(PortWithPullupsDevice):
         super().__init__("p6")
 
 
-class Port7Device(PortWithPullupsDevice):
+class Port7Device(PortDevice):
     """Port 7: 6-bit I/O port (bits 6-7 read as 1).
     P70/PCL:   unknown Unknown
     P71/SDA0:  output  I2C SDA, N-ch open-drain
@@ -293,7 +291,7 @@ class Port7Device(PortWithPullupsDevice):
         super().__init__("p7")
 
 
-class Port8Device(BasePortDevice):
+class Port8Device(PortDevice):
     """Port 8: 8-bit I/O port.  No pull-up resistors.
     P80/ANI01: output  Switched 5V supply control (0=off, 1=on)
     P81/ANI11: output  Antenna phantom power out (0=off, 1=on)
@@ -306,8 +304,12 @@ class Port8Device(BasePortDevice):
     def __init__(self):
         super().__init__("p8")
 
+        # PortDevice has 3 registers (0=DATA, 1=MODE, 2=PULLUP) but this
+        # port doesn't have pull-ups so we hide the PULLUP register
+        self.size = 2
 
-class Port9Device(BasePortDevice):
+
+class Port9Device(PortDevice):
     """Port 9: 8-bit I/O port.  No pull-up resistors.
     P90/ANI00: input   S-Contact (0=off, 1=on)
     P91/ANI10: input   Terminal 30 Constant B+ analog input
@@ -319,10 +321,10 @@ class Port9Device(BasePortDevice):
     P97/ANI70: output  Unknown"""
     def __init__(self):
         super().__init__("p9")
-        self.external_inputs = 0xFE  # P9.0=0: S-Contact off (ignition off)
-    def reset(self):
-        super().reset()
-        self.external_inputs = 0xFE  # P9.0=0: S-Contact off (ignition off)
+
+        # PortDevice has 3 registers (0=DATA, 1=MODE, 2=PULLUP) but this
+        # port doesn't have pull-ups so we hide the PULLUP register
+        self.size = 2
 
 
 class SPIControllerDevice(BaseDevice):

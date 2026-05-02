@@ -61,6 +61,13 @@ def make_processor():
 
     p9 = Port9Device()
     proc.bus.add_device(p9, (0xFF09, 0xFF09), (0xFF29, 0xFF29))
+    # P9.0 (S-Contact) is undriven = off.  P9.1-P9.7 are driven HIGH
+    # by external voltage dividers / pull-ups on the PCB.
+    from premium5.digital import LogicOutput
+    for i in range(1, 8):
+        driver = LogicOutput()
+        driver.set_high()
+        driver.bind(p9.pins[i].input)
 
     processor_status = ProcessorStatusDevice("processor_status")
     proc.bus.add_device(processor_status, (0xFF1C, 0xFF1E))
