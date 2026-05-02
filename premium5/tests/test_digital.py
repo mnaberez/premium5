@@ -54,6 +54,28 @@ class LogicOutputTests(unittest.TestCase):
         out.set_high()  # same state, should not push
         self.assertEqual(call_count[0], 0)
 
+    def test_set_level_high(self):
+        out = LogicOutput()
+        out.set_level(Level.HIGH)
+        self.assertTrue(out.high)
+
+    def test_set_level_low(self):
+        out = LogicOutput()
+        out.set_level(Level.LOW)
+        self.assertTrue(out.low)
+
+    def test_set_level_floating(self):
+        out = LogicOutput()
+        out.set_level(Level.FLOATING)
+        self.assertTrue(out.floating)
+
+    def test_set_level_pushes_to_bound_input(self):
+        out = LogicOutput()
+        inp = LogicInput()
+        out.bind(inp)
+        out.set_level(Level.HIGH)
+        self.assertTrue(inp.high)
+
 
 class LogicInputTests(unittest.TestCase):
 

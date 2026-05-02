@@ -16,14 +16,20 @@ class LogicOutput(object):
         self._input = logic_input
         self._input.notify(self._state)
 
+    def set_level(self, level):
+        if level != self._state:
+            self._state = level
+            if self._input is not None:
+                self._input.notify(level)
+
     def set_high(self):
-        self._set(Level.HIGH)
+        self.set_level(Level.HIGH)
 
     def set_low(self):
-        self._set(Level.LOW)
+        self.set_level(Level.LOW)
 
     def set_floating(self):
-        self._set(Level.FLOATING)
+        self.set_level(Level.FLOATING)
 
     @property
     def high(self):
@@ -36,12 +42,6 @@ class LogicOutput(object):
     @property
     def floating(self):
         return self._state == Level.FLOATING
-
-    def _set(self, state):
-        if state != self._state:
-            self._state = state
-            if self._input is not None:
-                self._input.notify(state)
 
 
 class LogicInput(object):

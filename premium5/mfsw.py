@@ -9,7 +9,7 @@ by 32 data bits (4 bytes LSB-first), then a trailing pulse.
 Timing is in CPU clock ticks at fx = 4.19 MHz.
 """
 
-from premium5.digital import LogicOutput
+from premium5.digital import Level, LogicOutput
 
 # Key codes (protocol values, transmitted LSB-first)
 VOL_DOWN = 0x00
@@ -75,10 +75,9 @@ class MFSWTransmitter(object):
     def _update_swc_out(self):
         if not self._waveform:
             self.swc_out.set_high()
-        elif self._waveform[0].level:
-            self.swc_out.set_high()
         else:
-            self.swc_out.set_low()
+            level = self._waveform[0].level
+            self.swc_out.set_level(level)
 
     @property
     def busy(self):
@@ -100,23 +99,23 @@ class MFSWTransmitter(object):
         wave = []
 
         # Packet start: LOW then HIGH
-        wave.append(_WaveformStep(False, self.PACKET_START_LOW_CYCLES))
-        wave.append(_WaveformStep(True, self.PACKET_START_HIGH_CYCLES))
+        wave.append(_WaveformStep(Level.LOW, self.PACKET_START_LOW_CYCLES))
+        wave.append(_WaveformStep(Level.HIGH, self.PACKET_START_HIGH_CYCLES))
 
         # Data bits (LSB-first): each is LOW then HIGH
         for byte_val in packet:
             for bit_pos in range(8):
-                if (byte_val >> bit_pos) & 1: # bit is high
+                if (byte_val >> bit_pos) & 1:
                     high_cycles = self.BIT_1_HIGH_CYCLES
                 else:
                     high_cycles = self.BIT_0_HIGH_CYCLES
 
-                wave.append(_WaveformStep(False, self.BIT_START_LOW_CYCLES))
-                wave.append(_WaveformStep(True, high_cycles))
+                wave.append(_WaveformStep(Level.LOW, self.BIT_START_LOW_CYCLES))
+                wave.append(_WaveformStep(Level.HIGH, high_cycles))
 
         # Stop: one more LOW so the firmware can measure the last data
         # bit's period (it needs 33 rising edges for 32 bits).
-        wave.append(_WaveformStep(False, self.PACKET_STOP_LOW_CYCLES))
+        wave.append(_WaveformStep(Level.LOW, self.PACKET_STOP_LOW_CYCLES))
 
         return wave
 
