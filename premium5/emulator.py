@@ -85,7 +85,7 @@ class Emulator:
             hex_str = "%02x" % proc.bus.read(proc.pc)
             current = {'addr': proc.pc, 'hex': hex_str, 'inst': '???'}
 
-        display_pixels = bytes(self.upd.get_display_pixels()).hex()
+        display_pixels = bytes(self.upd.display_pixels).hex()
         pictograph_ram = bytes(self.upd.pictograph_ram).hex()
         led = self._p3.pins[3].low  # led is active low
 
@@ -148,7 +148,6 @@ class Emulator:
     def _tick_peripherals(self):
         cycles = self.proc.inst_cycles
         self.mfsw.tick(cycles)
-        self.upd.tick(cycles)
 
     def step_batch(self):
         t0 = time.monotonic()

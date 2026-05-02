@@ -19,62 +19,69 @@ class UPD16432B(object):
         self.dat_in = LogicInput(default=Level.LOW)
         self.dat_out = LogicOutput()
 
-        # buffers
+        self.stb_in.on_rising  = self._on_stb_rising
+        self.stb_in.on_falling = self._on_stb_falling
+        self.clk_in.on_rising  = self._on_clk_rising
+        self.clk_in.on_falling = self._on_clk_falling
+
+        self._init_buffers()
+        self._init_command_state()
+        self._init_shift_state()
+
+    # init
+
+    def _init_buffers(self):
+        """Public access state buffers"""
         self.display_ram = bytearray(0x19)
         self.pictograph_ram = bytearray(0x08)
         self.chargen_ram = bytearray(7 * 0x10)
         self.led_ram = bytearray(1)
         self.key_data = bytearray(4)
+        self.display_pixels = bytearray(7 * 0x19)
 
-        # shift registers
-        self._shift_in = 0x00
-        self._shift_out = 0x00
-        self._shift_count = 0
-
-        # internal state
-        self._prev_stb = self.stb_in.snapshot()
-        self._prev_clk = self.clk_in.snapshot()
+    def _init_command_state(self):
+        """Internal state maintained between commands"""
         self._current_ram = None
         self._address = 0
         self._increment = False
         self._key_index = 0
-        self._display_pixels = None
+
+    def _init_shift_state(self):
+        """Shift register state (lasts for one command only)"""
+        self._shift_in  = 0x00  # 8-bit shift register for input
+        self._shift_out = 0x00  # 8-bit shift register for output
+        self._shift_count = 0   # number of bits shifted
         self._on_byte_func = self._on_byte_command
 
-    def tick(self, cycles=1):
-        # stb_in
-        if self._prev_stb.low and self.stb_in.high:  # rising edge
-            self._on_byte_func = self._on_byte_command
-            self._shift_in  = 0x00
-            self._shift_out = 0x00
-            self._shift_count = 0
-        self._prev_stb = self.stb_in.snapshot()
+    # callbacks: electrical
 
-        # clk_in
-        if self.stb_in.high: # chip enabled
-            if self._prev_clk.low and self.clk_in.high:  # rising edge
-                self._shift_bit_in()
+    def _on_stb_rising(self):
+        """Rising edge of STB: chip is now enabled; prepare for new command"""
+        self._init_shift_state()
 
-            if self._prev_clk.high and self.clk_in.low:  # falling edge
-                self._shift_bit_out()
+    def _on_stb_falling(self):
+        """Falling edge of STB: command completed; render display pixels"""
+        self._render_display_pixels()
 
-        self._prev_clk = self.clk_in.snapshot()
+    def _on_clk_rising(self):
+        """Rising edge of CLK: shift in a bit if enabled"""
+        if self.stb_in.high:
+            self._shift_in = (self._shift_in << 1) | int(self.dat_in)
+            self._shift_count += 1
+            if self._shift_count == 8:
+                self._on_byte_func(self._shift_in & 0xFF)
+                self._shift_in = 0x00
+                self._shift_count = 0
 
-    def _shift_bit_in(self):
-        """Rising edge: shift in a bit"""
-        self._shift_in = (self._shift_in << 1) | int(self.dat_in)
-        self._shift_count += 1
-        if self._shift_count == 8:
-            self._on_byte_func(self._shift_in & 0xFF)
-            self._shift_in = 0x00
-            self._shift_count = 0
+    def _on_clk_falling(self):
+        """Falling edge of CLK: shift out a bit if enabled"""
+        if self.stb_in.high:
+            if (self._shift_out >> (7 - self._shift_count)) & 1:
+                self.dat_out.set_high()
+            else:
+                self.dat_out.set_low()
 
-    def _shift_bit_out(self):
-        """Falling edge: shift out a bit"""
-        if (self._shift_out >> (7 - self._shift_count)) & 1:
-            self.dat_out.set_high()
-        else:
-            self.dat_out.set_low()
+    # calbacks: our internal ones called after a byte is received
 
     def _on_byte_command(self, rx_byte):
         if (rx_byte & 0xC7) == 0x44:  # key data request
@@ -140,12 +147,7 @@ class UPD16432B(object):
 
     def _write_data_byte(self, b):
         if self._address < len(self._current_ram):
-            if self._current_ram[self._address] != b:
-                self._current_ram[self._address] = b
-                if self._current_ram is self.display_ram:
-                    self._display_pixels = None
-                elif self._current_ram is self.chargen_ram:
-                    self._display_pixels = None
+            self._current_ram[self._address] = b
         if self._increment:
             self._address += 1
             self._wrap_address()
@@ -154,27 +156,16 @@ class UPD16432B(object):
         if self._address >= len(self._current_ram):
             self._address = 0
 
-    # public methods
-
-    def get_display_pixels(self):
-        """Render display RAM to pixels.  Returns 7 bytes per
-        character position (len(display_ram) * 7 bytes total).
-        Each byte is one row of a 5-wide character in the same
-        format as the uPD16432B chargen RAM."""
-        if self._display_pixels is None:
-            n = len(self.display_ram)
-            pixels = bytearray(7 * n)
-            for i in range(n):
-                char_code = self.display_ram[i]
-                if char_code < 0x10:
-                    src = self.chargen_ram
-                    offset = char_code * 7
-                else:
-                    src = CHARSET_VW_PREMIUM_5
-                    offset = char_code * 7
-                pixels[i * 7:(i + 1) * 7] = src[offset:offset + 7]
-            self._display_pixels = pixels
-        return self._display_pixels
+    def _render_display_pixels(self):
+        for i in range(len(self.display_ram)):
+            char_code = self.display_ram[i]
+            if char_code < 0x10:
+                src = self.chargen_ram
+                offset = char_code * 7
+            else:
+                src = CHARSET_VW_PREMIUM_5
+                offset = char_code * 7
+            self.display_pixels[i * 7:(i + 1) * 7] = src[offset:offset + 7]
 
 
 # Character set extracted from the uPD16432B in the

@@ -23,7 +23,7 @@ def _make_upd():
     return upd, stb, clk, dat, dat_read
 
 
-def _clock_byte(upd, stb, clk, dat, dat_read, tx_byte):
+def _clock_byte(stb, clk, dat, dat_read, tx_byte):
     """Clock one byte through the UPD16432B.
     Returns the byte shifted out by the UPD."""
     rx_byte = 0x00
@@ -35,24 +35,20 @@ def _clock_byte(upd, stb, clk, dat, dat_read, tx_byte):
         else:
             dat.set_low()
         clk.set_low()
-        upd.tick(1)
         rx_byte |= (int(dat_read) << (7 - bit_pos))
 
         # Rising edge: UPD latches data bit
         clk.set_high()
-        upd.tick(1)
 
     return rx_byte
 
 
-def _send(upd, stb, clk, dat, dat_read, spi_bytes):
+def _send(stb, clk, dat, dat_read, spi_bytes):
     """Send a complete SPI command (STB high, clock bytes, STB low)."""
     stb.set_high()
-    upd.tick(1)
     for b in spi_bytes:
-        _clock_byte(upd, stb, clk, dat, dat_read, b)
+        _clock_byte(stb, clk, dat, dat_read, b)
     stb.set_low()
-    upd.tick(1)
 
 
 class UPD16432B_InitTests(unittest.TestCase):
@@ -92,9 +88,7 @@ class UPD16432B_InitTests(unittest.TestCase):
     def test_empty_spi_command_does_not_raise(self):
         upd, stb, clk, dat, dat_read = _make_upd()
         stb.set_high()
-        upd.tick(1)
         stb.set_low()
-        upd.tick(1)
 
 
 class UPD16432B_DataSettingTests(unittest.TestCase):
@@ -104,7 +98,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000  # data setting command
         cmd |= 0b00000000  # display ram
         cmd |= 0b00001000  # increment off
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.display_ram)
         self.assertFalse(upd._increment)
 
@@ -113,7 +107,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000000
         cmd |= 0b00000000  # increment on
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.display_ram)
         self.assertTrue(upd._increment)
 
@@ -122,7 +116,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000001  # pictograph ram
         cmd |= 0b00001000  # increment off
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.pictograph_ram)
         self.assertFalse(upd._increment)
 
@@ -131,7 +125,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000010  # chargen ram
         cmd |= 0b00000000  # increment on
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.chargen_ram)
         self.assertTrue(upd._increment)
 
@@ -140,7 +134,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000010  # chargen ram
         cmd |= 0b00001000  # increment off (should be ignored)
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.chargen_ram)
         self.assertTrue(upd._increment)
 
@@ -149,7 +143,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000011  # led output latch
         cmd |= 0b00000000  # increment on
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.led_ram)
         self.assertTrue(upd._increment)
 
@@ -158,7 +152,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000011  # led output latch
         cmd |= 0b00001000  # increment off (should be ignored)
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIs(upd._current_ram, upd.led_ram)
         self.assertTrue(upd._increment)
 
@@ -166,7 +160,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         upd, stb, clk, dat, dat_read = _make_upd()
         cmd  = 0b01000000
         cmd |= 0b00000111  # not a valid ram area
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIsNone(upd._current_ram)
         self.assertEqual(upd._address, 0)
 
@@ -175,7 +169,7 @@ class UPD16432B_DataSettingTests(unittest.TestCase):
         cmd  = 0b01000000
         cmd |= 0b00000111  # not a valid ram area
         cmd |= 0b00001000  # increment off (should be ignored)
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertIsNone(upd._current_ram)
         self.assertEqual(upd._address, 0)
 
@@ -187,7 +181,7 @@ class UPD16432B_AddressSettingTests(unittest.TestCase):
         self.assertIsNone(upd._current_ram)
         cmd  = 0b10000000  # address setting command
         cmd |= 0b00000011  # address 0x03
-        _send(upd, stb, clk, dat, dat_read, [cmd])
+        _send(stb, clk, dat, dat_read, [cmd])
         self.assertEqual(upd._address, 0)
 
     def test_sets_addresses_for_each_ram_area(self):
@@ -211,9 +205,9 @@ class UPD16432B_AddressSettingTests(unittest.TestCase):
         for ram_select_bits, address, expected_address in tuples:
             upd, stb, clk, dat, dat_read = _make_upd()
             # data setting command
-            _send(upd, stb, clk, dat, dat_read, [0b01000000 | ram_select_bits])
+            _send(stb, clk, dat, dat_read, [0b01000000 | ram_select_bits])
             # address setting command
-            _send(upd, stb, clk, dat, dat_read, [0b10000000 | address])
+            _send(stb, clk, dat, dat_read, [0b10000000 | address])
             self.assertEqual(upd._address, expected_address)
 
 
@@ -227,7 +221,7 @@ class UPD16432B_WritingDataTests(unittest.TestCase):
         old_led = bytes(upd.led_ram)
         cmd = 0b10000000 | 0  # address 0
         data = list(range(1, 8))
-        _send(upd, stb, clk, dat, dat_read, [cmd] + data)
+        _send(stb, clk, dat, dat_read, [cmd] + data)
         self.assertEqual(bytes(upd.display_ram), old_display)
         self.assertEqual(bytes(upd.pictograph_ram), old_picto)
         self.assertEqual(bytes(upd.chargen_ram), old_chargen)
@@ -235,32 +229,32 @@ class UPD16432B_WritingDataTests(unittest.TestCase):
 
     def test_display_ram_increment_on_writes_data(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
+        _send(stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
         cmd = 0b10000000 | 0  # address 0
         data = list(range(1, 26))
-        _send(upd, stb, clk, dat, dat_read, [cmd] + data)
+        _send(stb, clk, dat, dat_read, [cmd] + data)
         self.assertTrue(upd._increment)
         self.assertEqual(upd._address, 0)  # wrapped around
         self.assertEqual(upd.display_ram, bytearray(data))
 
     def test_display_ram_increment_off_rewrites_same_address(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01001000])  # display ram, increment off
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0xAA, 0xBB])  # address 0, data
+        _send(stb, clk, dat, dat_read, [0b01001000])  # display ram, increment off
+        _send(stb, clk, dat, dat_read, [0b10000000, 0xAA, 0xBB])  # address 0, data
         self.assertEqual(upd.display_ram[0], 0xBB)
         self.assertEqual(upd.display_ram[1], 0x00)
 
     def test_pictograph_ram_increment_on_writes_data(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01000001])  # pictograph ram, increment on
+        _send(stb, clk, dat, dat_read, [0b01000001])  # pictograph ram, increment on
         data = list(range(1, 9))
-        _send(upd, stb, clk, dat, dat_read, [0b10000000] + data)
+        _send(stb, clk, dat, dat_read, [0b10000000] + data)
         self.assertEqual(upd.pictograph_ram, bytearray(data))
 
     def test_pictograph_ram_increment_off_rewrites_same_address(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01001001])  # pictograph ram, increment off
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0xAA, 0xBB])
+        _send(stb, clk, dat, dat_read, [0b01001001])  # pictograph ram, increment off
+        _send(stb, clk, dat, dat_read, [0b10000000, 0xAA, 0xBB])
         self.assertEqual(upd.pictograph_ram[0], 0xBB)
         self.assertEqual(upd.pictograph_ram[1], 0x00)
 
@@ -274,14 +268,12 @@ class UPD16432B_KeyDataTests(unittest.TestCase):
         upd.key_data[2] = 0xCC
         upd.key_data[3] = 0xDD
         stb.set_high()
-        upd.tick(1)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0x44)  # key data request
-        r0 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
-        r1 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
-        r2 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
-        r3 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
+        _clock_byte(stb, clk, dat, dat_read, 0x44)  # key data request
+        r0 = _clock_byte(stb, clk, dat, dat_read, 0x00)
+        r1 = _clock_byte(stb, clk, dat, dat_read, 0x00)
+        r2 = _clock_byte(stb, clk, dat, dat_read, 0x00)
+        r3 = _clock_byte(stb, clk, dat, dat_read, 0x00)
         stb.set_low()
-        upd.tick(1)
         self.assertEqual(r0, 0xAA)
         self.assertEqual(r1, 0xBB)
         self.assertEqual(r2, 0xCC)
@@ -294,33 +286,27 @@ class UPD16432B_KeyDataTests(unittest.TestCase):
         upd.key_data[2] = 0x33
         upd.key_data[3] = 0x44
         stb.set_high()
-        upd.tick(1)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0x44)  # key data request
+        _clock_byte(stb, clk, dat, dat_read, 0x44)  # key data request
         for _ in range(4):
-            _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
-        r0 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)  # wraps to key_data[0]
+            _clock_byte(stb, clk, dat, dat_read, 0x00)
+        r0 = _clock_byte(stb, clk, dat, dat_read, 0x00)  # wraps to key_data[0]
         stb.set_low()
-        upd.tick(1)
         self.assertEqual(r0, 0x11)
 
     def test_key_data_changes_between_reads(self):
         upd, stb, clk, dat, dat_read = _make_upd()
         upd.key_data[0] = 0xAA
         stb.set_high()
-        upd.tick(1)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0x44)
-        r0 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
+        _clock_byte(stb, clk, dat, dat_read, 0x44)
+        r0 = _clock_byte(stb, clk, dat, dat_read, 0x00)
         self.assertEqual(r0, 0xAA)
         stb.set_low()
-        upd.tick(1)
         # Change key data and read again
         upd.key_data[0] = 0x55
         stb.set_high()
-        upd.tick(1)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0x44)
-        r0 = _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
+        _clock_byte(stb, clk, dat, dat_read, 0x44)
+        r0 = _clock_byte(stb, clk, dat, dat_read, 0x00)
         stb.set_low()
-        upd.tick(1)
         self.assertEqual(r0, 0x55)
 
     def test_key_read_does_not_modify_any_ram(self):
@@ -330,12 +316,10 @@ class UPD16432B_KeyDataTests(unittest.TestCase):
         old_chargen = bytes(upd.chargen_ram)
         old_led = bytes(upd.led_ram)
         stb.set_high()
-        upd.tick(1)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0x44)
+        _clock_byte(stb, clk, dat, dat_read, 0x44)
         for _ in range(4):
-            _clock_byte(upd, stb, clk, dat, dat_read, 0x00)
+            _clock_byte(stb, clk, dat, dat_read, 0x00)
         stb.set_low()
-        upd.tick(1)
         self.assertEqual(bytes(upd.display_ram), old_display)
         self.assertEqual(bytes(upd.pictograph_ram), old_picto)
         self.assertEqual(bytes(upd.chargen_ram), old_chargen)
@@ -347,19 +331,19 @@ class UPD16432B_SelectTests(unittest.TestCase):
     def test_stb_rising_edge_resets_state(self):
         upd, stb, clk, dat, dat_read = _make_upd()
         # Write some data
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0x42])  # address 0, write 0x42
+        _send(stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
+        _send(stb, clk, dat, dat_read, [0b10000000, 0x42])  # address 0, write 0x42
         self.assertEqual(upd.display_ram[0], 0x42)
         # STB rising edge resets to command mode
-        _send(upd, stb, clk, dat, dat_read, [0b10000000 | 5])  # this is now a command, not data
+        _send(stb, clk, dat, dat_read, [0b10000000 | 5])  # this is now a command, not data
         self.assertEqual(upd.display_ram[1], 0x00)  # no data written
 
     def test_no_clocking_while_deselected(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
+        _send(stb, clk, dat, dat_read, [0b01000000])  # display ram, increment on
         # Clock bytes while STB is low — should be ignored
-        _clock_byte(upd, stb, clk, dat, dat_read, 0b10000000)
-        _clock_byte(upd, stb, clk, dat, dat_read, 0xFF)
+        _clock_byte(stb, clk, dat, dat_read, 0b10000000)
+        _clock_byte(stb, clk, dat, dat_read, 0xFF)
         self.assertEqual(upd.display_ram[0], 0x00)
 
 
@@ -367,38 +351,38 @@ class UPD16432B_DisplayPixelsTests(unittest.TestCase):
 
     def test_returns_correct_length(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        pixels = upd.get_display_pixels()
+        pixels = upd.display_pixels
         self.assertEqual(len(pixels), 7 * 0x19)
 
     def test_all_zeros_uses_chargen_char_0(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        pixels = upd.get_display_pixels()
+        pixels = upd.display_pixels
         self.assertEqual(pixels[:7], bytearray(7))
 
     def test_charset_character(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0x41])  # 'A' at position 0
-        pixels = upd.get_display_pixels()
+        _send(stb, clk, dat, dat_read, [0b01000000])
+        _send(stb, clk, dat, dat_read, [0b10000000, 0x41])  # 'A' at position 0
+        pixels = upd.display_pixels
         self.assertNotEqual(pixels[:7], bytearray(7))
 
     def test_display_ram_write_updates_pixels(self):
         upd, stb, clk, dat, dat_read = _make_upd()
-        pixels1 = upd.get_display_pixels()
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0x41])
-        pixels2 = upd.get_display_pixels()
+        pixels1 = bytes(upd.display_pixels)
+        _send(stb, clk, dat, dat_read, [0b01000000])
+        _send(stb, clk, dat, dat_read, [0b10000000, 0x41])
+        pixels2 = bytes(upd.display_pixels)
         self.assertNotEqual(pixels1, pixels2)
 
     def test_chargen_character(self):
         upd, stb, clk, dat, dat_read = _make_upd()
         # Write custom character to chargen slot 0
-        _send(upd, stb, clk, dat, dat_read, [0b01000010])  # chargen ram, increment on
-        _send(upd, stb, clk, dat, dat_read, [0b10000000] + [0xFF] * 7)
+        _send(stb, clk, dat, dat_read, [0b01000010])  # chargen ram, increment on
+        _send(stb, clk, dat, dat_read, [0b10000000] + [0xFF] * 7)
         # Set display position 0 to chargen slot 0
-        _send(upd, stb, clk, dat, dat_read, [0b01000000])
-        _send(upd, stb, clk, dat, dat_read, [0b10000000, 0x00])
-        pixels = upd.get_display_pixels()
+        _send(stb, clk, dat, dat_read, [0b01000000])
+        _send(stb, clk, dat, dat_read, [0b10000000, 0x00])
+        pixels = upd.display_pixels
         # Chargen slot 0 was written with 0xFF bytes
         for i in range(7):
             self.assertNotEqual(pixels[i], 0)
