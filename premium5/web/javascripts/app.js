@@ -26,6 +26,9 @@ conn.onStateReceived = function(state) {
     eeprom.update(state);
     statisticsView.update(state);
     controls.updateStatus(state);
+    const fisLines = decodeFISRadioData(state.fisRadioData);
+    document.getElementById('fis-line1').textContent = fisLines[0];
+    document.getElementById('fis-line2').textContent = fisLines[1];
 };
 conn.onOpen = function() {
     controls.stop();

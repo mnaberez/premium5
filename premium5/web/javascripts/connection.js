@@ -110,6 +110,7 @@ class EmulatorState {
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
         this.activePictographs = EmulatorState._decodePictographs(data.pictograph_ram);
         this.led = data.led;
+        this.fisRadioData = data.fis_radio_data;
 
         // Memory dumps
         this.expRam = data.exp_ram;
@@ -134,6 +135,22 @@ class EmulatorState {
         }
         return active;
     }
+}
+
+function decodeFISRadioData(hexStr) {
+    if (!hexStr || hexStr.length < 2) return ['        ', '        '];
+    const bytes = EmulatorState._decodeHex(hexStr);
+    let line1 = '';
+    let line2 = '';
+    for (let i = 1; i <= 8; i++) {
+        const b = (i < bytes.length) ? bytes[i] : 0;
+        line1 += (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : ' ';
+    }
+    for (let i = 9; i <= 16; i++) {
+        const b = (i < bytes.length) ? bytes[i] : 0;
+        line2 += (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : ' ';
+    }
+    return [line1, line2];
 }
 
 // Identifies a faceplate button.  The Connection translates these

@@ -44,6 +44,7 @@ class Emulator:
         configure_interrupts(self.proc)
         csi30 = self.proc.bus.device("csi30")
         self.upd = csi30.upd
+        self.fis = csi30.fis
 
         p0 = self.proc.bus.device("p0")
         self._p3 = self.proc.bus.device("p3")
@@ -116,6 +117,7 @@ class Emulator:
             'display_pixels': display_pixels,
             'pictograph_ram': pictograph_ram,
             'led': led,
+            'fis_radio_data': bytes(self.fis.radio_data).hex(),
             'real_mhz': round(self.real_mhz, 2),
             'potential_mhz': round(self.potential_mhz, 2),
             'exp_ram': bytes(exp_ram).hex(),
@@ -146,6 +148,7 @@ class Emulator:
     def _tick_peripherals(self):
         cycles = self.proc.inst_cycles
         self.mfsw.tick(cycles)
+        self.fis.tick(cycles)
 
     def step_batch(self):
         t0 = time.monotonic()

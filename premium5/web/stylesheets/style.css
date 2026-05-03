@@ -73,6 +73,9 @@ h1 {
     font-size: 12px;
     color: #333;
 }
+.mfsw-label {
+    margin-right: 2px;
+}
 .mfsw-controls button {
     font-family: 'Courier New', monospace;
     font-size: 12px;
@@ -90,6 +93,43 @@ h1 {
     cursor: pointer;
 }
 .mfsw-controls button:hover { background: #ddd; }
+
+/* Register/controls + MFSW/FIS two-column layout */
+.toolbar-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+}
+.mfsw-fis-column {
+    text-align: right;
+    margin-top: -6px;
+}
+
+/* FIS display */
+.fis-row {
+    margin-top: 10px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 6px;
+}
+.fis-label {
+    padding-top: 4px;
+}
+.fis-display {
+    font-family: monospace;
+    font-size: 14px;
+    background: #1A0505;
+    color: #FF2A1A;
+    padding: 4px 8px;
+    line-height: 1.4;
+    border-radius: 4px;
+}
+.fis-line {
+    font-size: 18px;
+    font-weight: bold;
+    white-space: pre;
+}
+
 .status-text {
     display: inline-block;
     margin-left: 15px;

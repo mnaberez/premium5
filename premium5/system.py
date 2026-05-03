@@ -11,6 +11,7 @@ from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port7Device, Port8Device, Port9Device)
 from premium5.devices import SPIControllerDevice
 from premium5.digital import CSI30Mux
+from premium5.fis import FISReceiver
 from premium5.i2c import M24C04
 from premium5.spi import UPD16432B
 
@@ -103,7 +104,15 @@ def make_processor():
     csi30_mux.dat_to_upd_out.bind(upd.dat_in)
     p4.pins[7].output.bind(upd.stb_in)
     upd.dat_out.bind(csi30.dat_in)
-    csi30.upd = upd
+    csi30.upd = upd  # XXX smell: stashing on an unrelated device
+
+    # FIS (3LB)
+    fis = FISReceiver()
+    csi30_mux.clk_to_fis_out.bind(fis.clk_in)
+    csi30_mux.dat_to_fis_out.bind(fis.dat_in)
+    p4.pins[4].output.bind(fis.ena_in)
+    fis.ena_out.bind(p4.pins[5].input)
+    csi30.fis = fis  # XXX smell: stashing on an unrelated device
     proc.bus.add_device(csi30, (0xFF1A, 0xFF1A), (0xFFB0, 0xFFB0))
     intc.connect(csi30, csi30.INT_TRANSFER, intc.INTCSI30)
 
