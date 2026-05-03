@@ -87,6 +87,10 @@ class LogicInput(object):
     # interrogate the level
 
     @property
+    def level(self):
+        return self._resolved_level
+
+    @property
     def high(self):
         return self._resolved_level == Level.HIGH
 
@@ -176,25 +180,41 @@ class CSI30Mux(object):
         self.dat_to_fis_out = LogicOutput()
 
         # internal callbacks
-        self.p43_in.on_rising  = self._connect_fis
-        self.p43_in.on_falling = self._connect_upd16432b
+        self.p43_in.on_rising  = self._route_fis
+        self.p43_in.on_falling = self._route_upd16432b
 
         # connect uPD16432B initially since p43_in is pulled low
-        self._connect_upd16432b()
+        self._route_upd16432b()
 
-    def _connect_upd16432b(self):
+    def _route_upd16432b(self):
         """P4.3 went LOW: route CSI30 to uPD16432B"""
+
+        # float outputs to fis
         self.clk_to_fis_out.set_floating()
         self.dat_to_fis_out.set_floating()
+
+        # upd16432b output levels = current csi30 input levels
+        self.clk_to_upd_out.set_level(self.clk_from_csi30_in.level)
+        self.dat_to_upd_out.set_level(self.dat_from_csi30_in.level)
+
+        # callbacks propagate changes in csi30 inputs to upd16432b outputs
         self.clk_from_csi30_in.on_rising  = self.clk_to_upd_out.set_high
         self.clk_from_csi30_in.on_falling = self.clk_to_upd_out.set_low
         self.dat_from_csi30_in.on_rising  = self.dat_to_upd_out.set_high
         self.dat_from_csi30_in.on_falling = self.dat_to_upd_out.set_low
 
-    def _connect_fis(self):
+    def _route_fis(self):
         """P4.3 went HIGH: route CSI30 to FIS"""
+
+        # float outputs to upd16432b
         self.clk_to_upd_out.set_floating()
         self.dat_to_upd_out.set_floating()
+
+        # fis output levels = current csi30 input levels
+        self.clk_to_fis_out.set_level(self.clk_from_csi30_in.level)
+        self.dat_to_fis_out.set_level(self.dat_from_csi30_in.level)
+
+        # callbacks propagate changes in csi30 inputs to fis outputs
         self.clk_from_csi30_in.on_rising  = self.clk_to_fis_out.set_high
         self.clk_from_csi30_in.on_falling = self.clk_to_fis_out.set_low
         self.dat_from_csi30_in.on_rising  = self.dat_to_fis_out.set_high

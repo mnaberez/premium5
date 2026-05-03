@@ -114,6 +114,22 @@ class LogicInputTests(unittest.TestCase):
         inp = LogicInput()
         self.assertTrue(inp.floating)
 
+    def test_level_returns_resolved_level(self):
+        inp = LogicInput()
+        self.assertEqual(inp.level, Level.FLOATING)
+        inp.notify(Level.HIGH)
+        self.assertEqual(inp.level, Level.HIGH)
+        inp.notify(Level.LOW)
+        self.assertEqual(inp.level, Level.LOW)
+
+    def test_level_resolves_floating_to_pull(self):
+        inp = LogicInput(pull_level=Level.HIGH)
+        self.assertEqual(inp.level, Level.HIGH)
+        inp.notify(Level.LOW)
+        self.assertEqual(inp.level, Level.LOW)
+        inp.notify(Level.FLOATING)
+        self.assertEqual(inp.level, Level.HIGH)
+
     def test_notify_high(self):
         inp = LogicInput()
         inp.notify(Level.HIGH)
@@ -304,3 +320,49 @@ class CSI30MuxTests(unittest.TestCase):
 
         self.assertTrue(mux.clk_to_upd_out.floating)
         self.assertTrue(mux.dat_to_upd_out.floating)
+
+    def test_switching_to_fis_pushes_current_levels(self):
+        mux = CSI30Mux()
+        p43_out = LogicOutput(Level.LOW)
+        p43_out.bind(mux.p43_in)
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.HIGH)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        # CLK and DAT are both HIGH, routed to UPD
+        self.assertTrue(mux.clk_to_upd_out.high)
+        self.assertTrue(mux.dat_to_upd_out.high)
+        self.assertTrue(mux.clk_to_fis_out.floating)
+        self.assertTrue(mux.dat_to_fis_out.floating)
+
+        # switch to FIS — no edges, just the switch
+        p43_out.set_high()
+
+        # FIS side should see the current levels immediately
+        self.assertTrue(mux.clk_to_fis_out.high)
+        self.assertTrue(mux.dat_to_fis_out.high)
+        self.assertTrue(mux.clk_to_upd_out.floating)
+        self.assertTrue(mux.dat_to_upd_out.floating)
+
+    def test_switching_to_upd_pushes_current_levels(self):
+        mux = CSI30Mux()
+        p43_out = LogicOutput(Level.HIGH)
+        p43_out.bind(mux.p43_in)
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.LOW)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        # CLK HIGH, DAT LOW, routed to FIS
+        self.assertTrue(mux.clk_to_fis_out.high)
+        self.assertTrue(mux.dat_to_fis_out.low)
+
+        # switch to UPD — no edges, just the switch
+        p43_out.set_low()
+
+        # UPD side should see the current levels immediately
+        self.assertTrue(mux.clk_to_upd_out.high)
+        self.assertTrue(mux.dat_to_upd_out.low)
+        self.assertTrue(mux.clk_to_fis_out.floating)
+        self.assertTrue(mux.dat_to_fis_out.floating)
