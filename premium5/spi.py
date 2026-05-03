@@ -81,7 +81,7 @@ class UPD16432B(object):
             else:
                 self.dat_out.set_low()
 
-    # calbacks: our internal ones called after a byte is received
+    # callbacks: our internal ones called after a byte is received
 
     def _on_byte_command(self, rx_byte):
         if (rx_byte & 0xC7) == 0x44:  # key data request

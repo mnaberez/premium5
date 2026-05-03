@@ -5,8 +5,8 @@ class Level:
 
 
 class LogicOutput(object):
-    """Drives a logic level.  Inputs are bound to it.  Whenever it
-    level changes, inputs are notified."""
+    """Drives a logic level.  The owner of a LogicOutput changes its level.
+    LogicInputs are bound to it and are notified when the level changes."""
 
     def __init__(self, level=Level.FLOATING):
         self._level = level
@@ -136,3 +136,66 @@ class Inverter(object):
         # callbacks from input change output
         self.input.on_rising = self.output.set_low
         self.input.on_falling = self.output.set_high
+
+
+class CSI30Mux(object):
+    """Component to switch CSI30 between uPD16432B and FIS (3LB).
+
+    The radio uses the SPI controller CSI30 for both its own
+    display (the uPD16432B) and the external FIS interface (3LB).
+    The firmware sets P4.3 to HIGH whenever it wants to talk to
+    the FIS, otherwise it leaves P4.3 low.
+
+    Guess:
+        P4.3 controls some sort of multiplexer.  Its function is
+        probably to prevent CLK and DAT changes from "leaking"
+        out to the FIS while the uPD16432B is being accessed.  It
+        might also prevent the uPD16432B from seeing CLK and DAT
+        changes when the FIS is being used.
+
+    This emulation is an isolator:
+        When P4.3 is LOW:  CSI30 drives the uPD16432B, FIS floats
+        When P4.3 is HIGH: CSI30 drives the FIS bus, uPD16432B floats
+    """
+
+    def __init__(self):
+        # input from P4.3: low=uPD16432B, high=FIS
+        # pull down uPD16432B the default
+        self.p43_in = LogicInput(pull_level=Level.LOW)
+
+        # inputs: spi lines from csi30
+        self.clk_from_csi30_in = LogicInput()
+        self.dat_from_csi30_in = LogicInput()
+
+        # outputs: uPD16432B side (active when p43 is LOW)
+        self.clk_to_upd_out = LogicOutput()
+        self.dat_to_upd_out = LogicOutput()
+
+        # outputs: FIS/3LB side (active when p43 is HIGH)
+        self.clk_to_fis_out = LogicOutput()
+        self.dat_to_fis_out = LogicOutput()
+
+        # internal callbacks
+        self.p43_in.on_rising  = self._connect_fis
+        self.p43_in.on_falling = self._connect_upd16432b
+
+        # connect uPD16432B initially since p43_in is pulled low
+        self._connect_upd16432b()
+
+    def _connect_upd16432b(self):
+        """P4.3 went LOW: route CSI30 to uPD16432B"""
+        self.clk_to_fis_out.set_floating()
+        self.dat_to_fis_out.set_floating()
+        self.clk_from_csi30_in.on_rising  = self.clk_to_upd_out.set_high
+        self.clk_from_csi30_in.on_falling = self.clk_to_upd_out.set_low
+        self.dat_from_csi30_in.on_rising  = self.dat_to_upd_out.set_high
+        self.dat_from_csi30_in.on_falling = self.dat_to_upd_out.set_low
+
+    def _connect_fis(self):
+        """P4.3 went HIGH: route CSI30 to FIS"""
+        self.clk_to_upd_out.set_floating()
+        self.dat_to_upd_out.set_floating()
+        self.clk_from_csi30_in.on_rising  = self.clk_to_fis_out.set_high
+        self.clk_from_csi30_in.on_falling = self.clk_to_fis_out.set_low
+        self.dat_from_csi30_in.on_rising  = self.dat_to_fis_out.set_high
+        self.dat_from_csi30_in.on_falling = self.dat_to_fis_out.set_low

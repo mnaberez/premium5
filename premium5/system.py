@@ -10,6 +10,7 @@ from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
                               Port7Device, Port8Device, Port9Device)
 from premium5.devices import SPIControllerDevice
+from premium5.digital import CSI30Mux
 from premium5.i2c import M24C04
 from premium5.spi import UPD16432B
 
@@ -94,9 +95,13 @@ def make_processor():
 
     upd = UPD16432B()
     csi30 = SPIControllerDevice("csi30")
+    csi30_mux = CSI30Mux()
+    p4.pins[3].output.bind(csi30_mux.p43_in)
+    csi30.clk_out.bind(csi30_mux.clk_from_csi30_in)
+    csi30.dat_out.bind(csi30_mux.dat_from_csi30_in)
+    csi30_mux.clk_to_upd_out.bind(upd.clk_in)
+    csi30_mux.dat_to_upd_out.bind(upd.dat_in)
     p4.pins[7].output.bind(upd.stb_in)
-    csi30.clk_out.bind(upd.clk_in)
-    csi30.dat_out.bind(upd.dat_in)
     upd.dat_out.bind(csi30.dat_in)
     csi30.upd = upd
     proc.bus.add_device(csi30, (0xFF1A, 0xFF1A), (0xFFB0, 0xFFB0))

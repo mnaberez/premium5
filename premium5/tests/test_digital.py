@@ -1,5 +1,5 @@
 import unittest
-from premium5.digital import Level, LogicOutput, LogicInput, Inverter
+from premium5.digital import Level, LogicOutput, LogicInput, Inverter, CSI30Mux
 
 
 class LogicOutputTests(unittest.TestCase):
@@ -201,21 +201,106 @@ class LogicInputTests(unittest.TestCase):
 
 class InverterTests(unittest.TestCase):
 
-    def test_high_in_low_out(self):
+    def test_inverts(self):
         inv = Inverter()
-        out = LogicOutput()
-        recv = LogicInput()
-        out.bind(inv.input)
-        inv.output.bind(recv)
-        out.set_high()
-        self.assertTrue(recv.low)
 
-    def test_low_in_high_out(self):
-        inv = Inverter()
-        out = LogicOutput()
-        recv = LogicInput()
-        out.bind(inv.input)
-        inv.output.bind(recv)
-        out.set_high()
-        out.set_low()
-        self.assertTrue(recv.high)
+        signal = LogicOutput()
+        signal.bind(inv.input)
+
+        inverted_signal = LogicInput()
+        inv.output.bind(inverted_signal)
+
+        signal.set_high()
+        self.assertTrue(inverted_signal.low)
+        signal.set_low()
+        self.assertTrue(inverted_signal.high)
+
+
+class CSI30MuxTests(unittest.TestCase):
+
+    def test_ctor_routes_to_upd(self):
+        mux = CSI30Mux()
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.LOW)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        csi30_clk_out.set_low()
+        self.assertTrue(mux.clk_to_upd_out.low)
+        csi30_clk_out.set_high()
+        self.assertTrue(mux.clk_to_upd_out.high)
+
+        csi30_dat_out.set_low()
+        self.assertTrue(mux.dat_to_upd_out.low)
+        csi30_dat_out.set_high()
+        self.assertTrue(mux.dat_to_upd_out.high)
+
+        self.assertTrue(mux.clk_to_fis_out.floating)
+        self.assertTrue(mux.dat_to_fis_out.floating)
+
+    def test_p43_floating_routes_to_upd(self):
+        mux = CSI30Mux()
+        p43_out = LogicOutput(Level.FLOATING)
+        p43_out.bind(mux.p43_in)
+        self.assertTrue(mux.p43_in.low)  # pulled down
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.LOW)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        csi30_clk_out.set_low()
+        self.assertTrue(mux.clk_to_upd_out.low)
+        csi30_clk_out.set_high()
+        self.assertTrue(mux.clk_to_upd_out.high)
+
+        csi30_dat_out.set_low()
+        self.assertTrue(mux.dat_to_upd_out.low)
+        csi30_dat_out.set_high()
+        self.assertTrue(mux.dat_to_upd_out.high)
+
+        self.assertTrue(mux.clk_to_fis_out.floating)
+        self.assertTrue(mux.dat_to_fis_out.floating)
+
+    def test_p43_going_low_routes_to_upd(self):
+        mux = CSI30Mux()
+        p43_out = LogicOutput(Level.LOW)
+        p43_out.bind(mux.p43_in)
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.LOW)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        csi30_clk_out.set_low()
+        self.assertTrue(mux.clk_to_upd_out.low)
+        csi30_clk_out.set_high()
+        self.assertTrue(mux.clk_to_upd_out.high)
+
+        csi30_dat_out.set_low()
+        self.assertTrue(mux.dat_to_upd_out.low)
+        csi30_dat_out.set_high()
+        self.assertTrue(mux.dat_to_upd_out.high)
+
+        self.assertTrue(mux.clk_to_fis_out.floating)
+        self.assertTrue(mux.dat_to_fis_out.floating)
+
+    def test_p43_going_high_routes_to_fis(self):
+        mux = CSI30Mux()
+        p43_out = LogicOutput(Level.HIGH)
+        p43_out.bind(mux.p43_in)
+        csi30_clk_out = LogicOutput(Level.HIGH)
+        csi30_clk_out.bind(mux.clk_from_csi30_in)
+        csi30_dat_out = LogicOutput(Level.LOW)
+        csi30_dat_out.bind(mux.dat_from_csi30_in)
+
+        csi30_clk_out.set_low()
+        self.assertTrue(mux.clk_to_fis_out.low)
+        csi30_clk_out.set_high()
+        self.assertTrue(mux.clk_to_fis_out.high)
+
+        csi30_dat_out.set_low()
+        self.assertTrue(mux.dat_to_fis_out.low)
+        csi30_dat_out.set_high()
+        self.assertTrue(mux.dat_to_fis_out.high)
+
+        self.assertTrue(mux.clk_to_upd_out.floating)
+        self.assertTrue(mux.dat_to_upd_out.floating)
