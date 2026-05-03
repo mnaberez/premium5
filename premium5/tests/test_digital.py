@@ -1,5 +1,5 @@
 import unittest
-from premium5.digital import Level, LogicOutput, LogicInput, Inverter, CSI30Mux
+from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Mux, CSI30Mux
 
 
 class LogicOutputTests(unittest.TestCase):
@@ -230,6 +230,79 @@ class InverterTests(unittest.TestCase):
         self.assertTrue(inverted_signal.low)
         signal.set_low()
         self.assertTrue(inverted_signal.high)
+
+
+class MuxTests(unittest.TestCase):
+
+    def test_default_routes_to_output_a(self):
+        mux = Mux()
+        signal = LogicOutput(Level.HIGH)
+        signal.bind(mux.input)
+
+        signal.set_low()
+        self.assertTrue(mux.output_a.low)
+        signal.set_high()
+        self.assertTrue(mux.output_a.high)
+
+        self.assertTrue(mux.output_b.floating)
+
+    def test_select_low_routes_to_output_a(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.bind(mux.select)
+        signal = LogicOutput(Level.HIGH)
+        signal.bind(mux.input)
+
+        signal.set_low()
+        self.assertTrue(mux.output_a.low)
+        signal.set_high()
+        self.assertTrue(mux.output_a.high)
+
+        self.assertTrue(mux.output_b.floating)
+
+    def test_select_high_routes_to_output_b(self):
+        mux = Mux()
+        select = LogicOutput(Level.HIGH)
+        select.bind(mux.select)
+        signal = LogicOutput(Level.HIGH)
+        signal.bind(mux.input)
+
+        signal.set_low()
+        self.assertTrue(mux.output_b.low)
+        signal.set_high()
+        self.assertTrue(mux.output_b.high)
+
+        self.assertTrue(mux.output_a.floating)
+
+    def test_select_floating_routes_to_output_a(self):
+        mux = Mux()
+        select = LogicOutput(Level.FLOATING)
+        select.bind(mux.select)
+        self.assertTrue(mux.select.low)  # pulled down
+        signal = LogicOutput(Level.HIGH)
+        signal.bind(mux.input)
+
+        signal.set_low()
+        self.assertTrue(mux.output_a.low)
+        signal.set_high()
+        self.assertTrue(mux.output_a.high)
+
+        self.assertTrue(mux.output_b.floating)
+
+    def test_switching_pushes_current_levels(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.bind(mux.select)
+        signal = LogicOutput(Level.HIGH)
+        signal.bind(mux.input)
+
+        self.assertTrue(mux.output_a.high)
+        self.assertTrue(mux.output_b.floating)
+
+        select.set_high()
+
+        self.assertTrue(mux.output_b.high)
+        self.assertTrue(mux.output_a.floating)
 
 
 class CSI30MuxTests(unittest.TestCase):

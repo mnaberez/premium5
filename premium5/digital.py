@@ -142,6 +142,37 @@ class Inverter(object):
         self.input.on_falling = self.output.set_high
 
 
+class Mux(object):
+    """Routes an input to one of two outputs based on a select signal.
+
+    select LOW:  input routes to output_a, output_b floats
+    select HIGH: input routes to output_b, output_a floats
+    """
+
+    def __init__(self):
+        self.select = LogicInput(pull_level=Level.LOW)
+
+        self.input = LogicInput()
+        self.output_a = LogicOutput()
+        self.output_b = LogicOutput()
+
+        self.select.on_falling = self._route_input_to_output_a
+        self.select.on_rising  = self._route_input_to_output_b
+        self._route_input_to_output_a()
+
+    def _route_input_to_output_a(self):
+        self.output_b.set_floating()
+        self.output_a.set_level(self.input.level)
+        self.input.on_rising = self.output_a.set_high
+        self.input.on_falling = self.output_a.set_low
+
+    def _route_input_to_output_b(self):
+        self.output_a.set_floating()
+        self.output_b.set_level(self.input.level)
+        self.input.on_rising = self.output_b.set_high
+        self.input.on_falling = self.output_b.set_low
+
+
 class CSI30Mux(object):
     """Component to switch CSI30 between uPD16432B and FIS (3LB).
 
@@ -163,59 +194,25 @@ class CSI30Mux(object):
     """
 
     def __init__(self):
+        self._clk_mux = Mux()
+        self._dat_mux = Mux()
+
         # input from P4.3: low=uPD16432B, high=FIS
-        # pull down uPD16432B the default
         self.p43_in = LogicInput(pull_level=Level.LOW)
 
-        # inputs: spi lines from csi30
-        self.clk_from_csi30_in = LogicInput()
-        self.dat_from_csi30_in = LogicInput()
+        # fan out input from P4.3 to both mux selects
+        self._p43_fanout = LogicOutput()
+        self._p43_fanout.bind(self._clk_mux.select)
+        self._p43_fanout.bind(self._dat_mux.select)
+        self.p43_in.on_falling = self._p43_fanout.set_low
+        self.p43_in.on_rising  = self._p43_fanout.set_high
 
-        # outputs: uPD16432B side (active when p43 is LOW)
-        self.clk_to_upd_out = LogicOutput()
-        self.dat_to_upd_out = LogicOutput()
+        # expose clk in/outs with descriptive names
+        self.clk_from_csi30_in = self._clk_mux.input
+        self.clk_to_upd_out = self._clk_mux.output_a
+        self.clk_to_fis_out = self._clk_mux.output_b
 
-        # outputs: FIS/3LB side (active when p43 is HIGH)
-        self.clk_to_fis_out = LogicOutput()
-        self.dat_to_fis_out = LogicOutput()
-
-        # internal callbacks
-        self.p43_in.on_rising  = self._route_fis
-        self.p43_in.on_falling = self._route_upd16432b
-
-        # connect uPD16432B initially since p43_in is pulled low
-        self._route_upd16432b()
-
-    def _route_upd16432b(self):
-        """P4.3 went LOW: route CSI30 to uPD16432B"""
-
-        # float outputs to fis
-        self.clk_to_fis_out.set_floating()
-        self.dat_to_fis_out.set_floating()
-
-        # upd16432b output levels = current csi30 input levels
-        self.clk_to_upd_out.set_level(self.clk_from_csi30_in.level)
-        self.dat_to_upd_out.set_level(self.dat_from_csi30_in.level)
-
-        # callbacks propagate changes in csi30 inputs to upd16432b outputs
-        self.clk_from_csi30_in.on_rising  = self.clk_to_upd_out.set_high
-        self.clk_from_csi30_in.on_falling = self.clk_to_upd_out.set_low
-        self.dat_from_csi30_in.on_rising  = self.dat_to_upd_out.set_high
-        self.dat_from_csi30_in.on_falling = self.dat_to_upd_out.set_low
-
-    def _route_fis(self):
-        """P4.3 went HIGH: route CSI30 to FIS"""
-
-        # float outputs to upd16432b
-        self.clk_to_upd_out.set_floating()
-        self.dat_to_upd_out.set_floating()
-
-        # fis output levels = current csi30 input levels
-        self.clk_to_fis_out.set_level(self.clk_from_csi30_in.level)
-        self.dat_to_fis_out.set_level(self.dat_from_csi30_in.level)
-
-        # callbacks propagate changes in csi30 inputs to fis outputs
-        self.clk_from_csi30_in.on_rising  = self.clk_to_fis_out.set_high
-        self.clk_from_csi30_in.on_falling = self.clk_to_fis_out.set_low
-        self.dat_from_csi30_in.on_rising  = self.dat_to_fis_out.set_high
-        self.dat_from_csi30_in.on_falling = self.dat_to_fis_out.set_low
+        # expose dat in/outs with descriptive names
+        self.dat_from_csi30_in = self._dat_mux.input
+        self.dat_to_upd_out = self._dat_mux.output_a
+        self.dat_to_fis_out = self._dat_mux.output_b
