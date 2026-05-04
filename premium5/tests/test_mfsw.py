@@ -26,34 +26,34 @@ class MFSWTransmitterTests(unittest.TestCase):
     def test_wire_goes_low_on_send(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        tx.tick()
+        tx.tick_1mhz()
         self.assertTrue(tx.swc_out.low)
 
     def test_wire_returns_to_idle_after_packet(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        for _ in range(10_000_000):
-            tx.tick()
+        for _ in range(1_000_000):
+            tx.tick_1mhz()
         self.assertTrue(tx.swc_out.high)
         self.assertFalse(tx.busy)
 
     def test_start_bit_timing(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        tx.tick()
+        tx.tick_1mhz()
         # Wire starts LOW (start bit active)
         self.assertTrue(tx.swc_out.low)
         # Tick through the start LOW period
-        for _ in range(37708):
-            tx.tick()
+        for _ in range(8998):
+            tx.tick_1mhz()
             self.assertTrue(tx.swc_out.low)
-        tx.tick()  # transition to HIGH
+        tx.tick_1mhz()  # transition to HIGH
         self.assertTrue(tx.swc_out.high)
 
     def test_tick_with_cycles(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        tx.tick(37710)
+        tx.tick_1mhz(9000)
         self.assertTrue(tx.swc_out.high)  # past start LOW, now in start HIGH
 
     def test_packet_produces_correct_bits(self):
@@ -83,8 +83,8 @@ class MFSWTransmitterTests(unittest.TestCase):
     def test_can_send_after_complete(self):
         tx = MFSWTransmitter()
         tx.send(UP)
-        for _ in range(10_000_000):
-            tx.tick()
+        for _ in range(1_000_000):
+            tx.tick_1mhz()
         self.assertFalse(tx.busy)
         tx.send(DOWN)  # should not raise
         self.assertTrue(tx.busy)
@@ -92,19 +92,19 @@ class MFSWTransmitterTests(unittest.TestCase):
     def test_tick_while_idle_is_harmless(self):
         tx = MFSWTransmitter()
         for _ in range(1000):
-            tx.tick()
+            tx.tick_1mhz()
         self.assertTrue(tx.swc_out.high)
         self.assertFalse(tx.busy)
 
     def _receive_packet(self, tx, key_code):
         """Send a packet, capture edges, decode 4 bytes."""
         tx.send(key_code)
-        tx.tick()
+        tx.tick_1mhz()
         edges = []
         prev = tx.swc_out.high
         total = 0
-        for _ in range(10_000_000):
-            tx.tick()
+        for _ in range(1_000_000):
+            tx.tick_1mhz()
             total += 1
             if tx.swc_out.high != prev:
                 edges.append((total, prev))
@@ -118,7 +118,7 @@ class MFSWTransmitterTests(unittest.TestCase):
         bits = []
         for i in range(0, 64, 2):
             period = bit_edges[i][0] + bit_edges[i + 1][0]
-            bits.append(1 if period > 7549 else 0)
+            bits.append(1 if period > 1800 else 0)
         rx_bytes = []
         for byte_idx in range(4):
             val = 0

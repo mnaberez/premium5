@@ -21,9 +21,9 @@ class FISReceiver(object):
     (CSI30Mux) because CSI30 is also used to drive the uPD16432B.
     """
 
-    # Timing in CPU ticks at 4.19 MHz
+    # Timing in ticks at 1 MHz (1 tick = 1 us)
     # ticks before driving ENA high after receiving a byte
-    ENA_RESPONSE_DELAY_CYCLES = 500  # guess
+    ENA_RESPONSE_DELAY_CYCLES = 120  # guess
 
     def __init__(self):
         # electrical interface
@@ -48,7 +48,7 @@ class FISReceiver(object):
         self.clk_in.on_falling = self._on_clk_falling
         self.ena_in.on_rising = self._on_ena_rising
 
-    def tick(self, cycles=1):
+    def tick_1mhz(self, cycles=1):
         if self._ena_delay_cycles > 0:
             self._ena_delay_cycles -= cycles
             if self._ena_delay_cycles <= 0:

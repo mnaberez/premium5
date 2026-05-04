@@ -60,6 +60,7 @@ class Emulator:
         self._p02_driver = LogicOutput(Level.HIGH)
         self._p02_driver.bind(p0.pins[2].input)
 
+        self._reference_remainder = 0
         self.running = False
         self.steps_per_frame = 50000
         self.potential_mhz = 0.0
@@ -129,7 +130,8 @@ class Emulator:
             'listing_slice': self.get_listing_slice(),
         }
 
-    CLOCK_HZ = 4_190_000
+    SYSTEM_CLOCK_HZ    = 4_190_000  # cpu clock frequency (4.19 MHz)
+    REFERENCE_CLOCK_HZ = 1_000_000  # reference clock for external devices (1 MHz)
 
     def start_run(self):
         self._epoch_time = time.monotonic()
@@ -145,10 +147,17 @@ class Emulator:
             hex_str = "%02x" % self.proc.bus.read(pc)
             self._disasm_history.append({'addr': pc, 'hex': hex_str, 'inst': '???'})
 
-    def _tick_peripherals(self):
-        cycles = self.proc.inst_cycles
-        self.mfsw.tick(cycles)
-        self.fis.tick(cycles)
+    def _tick_reference(self):
+        '''Parts of the system without access to the MCU's system clock sometimes need a
+        timing reference.  This reference does not need to be the CPU clock frequency but
+        must be synchronized to the CPU clock, e.g. to allow single-step to work.  For
+        these use cases, a 1 MHz reference clock is provided.'''
+        self._reference_remainder += self.proc.inst_cycles * self.REFERENCE_CLOCK_HZ
+        ticks = self._reference_remainder // self.SYSTEM_CLOCK_HZ
+        self._reference_remainder %= self.SYSTEM_CLOCK_HZ
+        if ticks > 0:
+            self.mfsw.tick_1mhz(ticks)
+            self.fis.tick_1mhz(ticks)
 
     def step_batch(self):
         t0 = time.monotonic()
@@ -158,7 +167,7 @@ class Emulator:
             if self.proc.run_state != RunState.HALTED:
                 recent_pcs.append(self.proc.pc)
             self.proc.step()
-            self._tick_peripherals()
+            self._tick_reference()
         for pc in recent_pcs:
             self._disasm_at(pc)
         elapsed = time.monotonic() - t0
@@ -168,7 +177,7 @@ class Emulator:
     def throttle_delay(self):
         if self.speed_pct <= 0:
             return 0.05
-        target_hz = self.CLOCK_HZ * self.speed_pct / 100
+        target_hz = self.SYSTEM_CLOCK_HZ * self.speed_pct / 100
         cycles_since_epoch = self.proc.total_cycles - self._epoch_cycles
         target_wall = cycles_since_epoch / target_hz
         actual_wall = time.monotonic() - self._epoch_time
@@ -189,7 +198,7 @@ class Emulator:
     def step_one(self):
         self._disasm_at(self.proc.pc)
         self.proc.step()
-        self._tick_peripherals()
+        self._tick_reference()
 
     def handle_command(self, cmd):
         action = cmd.get('action')

@@ -31,13 +31,13 @@ class MFSWTransmitter(object):
     HEADER_1 = 0x82
     HEADER_2 = 0x17
 
-    # Timing in ticks at 4.19 MHz (midpoints of firmware valid ranges)
-    PACKET_START_LOW_CYCLES  = 37710  # 9.0 ms  (valid: 6.0-12.0 ms)
-    PACKET_START_HIGH_CYCLES = 18855  # 4.5 ms  (valid: 3.0-6.0 ms)
-    BIT_START_LOW_CYCLES     =  2514  # 0.6 ms  (guess; firmware only validates total period)
-    BIT_0_HIGH_CYCLES        =  2514  # 0.6 ms  (total period ~1.2 ms, < 1.8 ms threshold)
-    BIT_1_HIGH_CYCLES        =  7123  # 1.7 ms  (total period ~2.3 ms, > 1.8 ms threshold)
-    PACKET_STOP_LOW_CYCLES   =  1000  # ~0.24 ms (guess; just needs to trigger the Schmitt trigger)
+    # Timing in ticks at 1 MHz (midpoints of firmware valid ranges)
+    PACKET_START_LOW_CYCLES  = 9000  # 9.0 ms  (valid: 6.0-12.0 ms)
+    PACKET_START_HIGH_CYCLES = 4500  # 4.5 ms  (valid: 3.0-6.0 ms)
+    BIT_START_LOW_CYCLES     =  600  # 0.6 ms  (guess; firmware only validates total period)
+    BIT_0_HIGH_CYCLES        =  600  # 0.6 ms  (total period ~1.2 ms, < 1.8 ms threshold)
+    BIT_1_HIGH_CYCLES        = 1700  # 1.7 ms  (total period ~2.3 ms, > 1.8 ms threshold)
+    PACKET_STOP_LOW_CYCLES   =  240  # ~0.24 ms (guess; just needs to trigger the Schmitt trigger)
 
     def __init__(self):
         # electrical interface
@@ -54,13 +54,13 @@ class MFSWTransmitter(object):
         packet = self._build_packet(key_code)
         self._waveform = self._build_waveform(packet)
 
-    def tick(self, cycles=1):
+    def tick_1mhz(self, cycles=1):
         """Work through the current waveform.  The waveform is a FIFO buffer
         of (logic level, cycles remaining).  The number of cycles remaining in
         the first element of the waveform are decremented on tick().  When no
         more cycles are remaining, the element is popped off the waveform.  When
         all elements are popped off, the entire waveform for the full MFSW packet
-        has been transmitted.  The system clock is 4.19 MHz, so 1 cycle = 0.239 us."""
+        has been transmitted.  Clocked at 1 MHz, so 1 cycle = 1 us."""
         for _ in range(cycles):
             if not self._waveform:
                 return
