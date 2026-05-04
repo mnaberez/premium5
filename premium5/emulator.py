@@ -10,6 +10,7 @@ from k0emu.processor import RegisterPairs, Flags, RunState
 from premium5.system import make_processor, populate_eeprom, configure_interrupts
 from premium5.digital import Level, LogicOutput, Inverter
 from premium5.mfsw import MFSWTransmitter
+from premium5.timing import Governor, ReferenceTick
 
 
 class Listing:
@@ -35,6 +36,8 @@ class Listing:
 
 
 class Emulator:
+    SYSTEM_CLOCK_HZ = 4_190_000  # cpu clock frequency (4.19 MHz)
+
     def __init__(self, rom_path, listing=None):
         self.proc = make_processor()
         with open(rom_path, 'rb') as f:
@@ -60,15 +63,14 @@ class Emulator:
         self._p02_driver = LogicOutput(Level.HIGH)
         self._p02_driver.bind(p0.pins[2].input)
 
-        self._reference_remainder = 0
+        self.governor = Governor(self.SYSTEM_CLOCK_HZ)
+        self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)
+        self.reference_tick.add_listener(self.mfsw)
+        self.reference_tick.add_listener(self.fis)
+
         self.running = False
         self.steps_per_frame = 50000
-        self.potential_mhz = 0.0
-        self.real_mhz = 0.0
-        self._epoch_time = 0.0
-        self._epoch_cycles = 0
         self._disasm_history = deque(maxlen=20)
-        self.speed_pct = 100
         self._listing = listing
         self.lock = threading.Lock()
         self.state_changed = threading.Condition(self.lock)
@@ -88,10 +90,6 @@ class Emulator:
         display_pixels = bytes(self.upd.display_pixels).hex()
         pictograph_ram = bytes(self.upd.pictograph_ram).hex()
         led = self._p3.pins[3].low  # led is active low
-
-        wall_since_epoch = time.monotonic() - self._epoch_time
-        if wall_since_epoch > 0 and self.running:
-            self.real_mhz = ((proc.total_cycles - self._epoch_cycles) / wall_since_epoch) / 1_000_000
 
         exp_ram = proc.bus.device("expansion_ram")._data
         hs_ram = proc.bus.device("high_speed_ram")._data
@@ -119,8 +117,8 @@ class Emulator:
             'pictograph_ram': pictograph_ram,
             'led': led,
             'fis_radio_data': bytes(self.fis.radio_data).hex(),
-            'real_mhz': round(self.real_mhz, 2),
-            'potential_mhz': round(self.potential_mhz, 2),
+            'real_mhz': self.governor.real_mhz,
+            'potential_mhz': self.governor.potential_mhz,
             'exp_ram': bytes(exp_ram).hex(),
             'exp_ram_base': 0xF000,
             'hs_ram': bytes(hs_ram).hex(),
@@ -130,12 +128,8 @@ class Emulator:
             'listing_slice': self.get_listing_slice(),
         }
 
-    SYSTEM_CLOCK_HZ    = 4_190_000  # cpu clock frequency (4.19 MHz)
-    REFERENCE_CLOCK_HZ = 1_000_000  # reference clock for external devices (1 MHz)
-
     def start_run(self):
-        self._epoch_time = time.monotonic()
-        self._epoch_cycles = self.proc.total_cycles
+        self.governor.reset()
         self.running = True
 
     def _disasm_at(self, pc):
@@ -147,48 +141,25 @@ class Emulator:
             hex_str = "%02x" % self.proc.bus.read(pc)
             self._disasm_history.append({'addr': pc, 'hex': hex_str, 'inst': '???'})
 
-    def _tick_reference(self):
-        '''Parts of the system without access to the MCU's system clock sometimes need a
-        timing reference.  This reference does not need to be the CPU clock frequency but
-        must be synchronized to the CPU clock, e.g. to allow single-step to work.  For
-        these use cases, a 1 MHz reference clock is provided.'''
-        self._reference_remainder += self.proc.inst_cycles * self.REFERENCE_CLOCK_HZ
-        ticks = self._reference_remainder // self.SYSTEM_CLOCK_HZ
-        self._reference_remainder %= self.SYSTEM_CLOCK_HZ
-        if ticks > 0:
-            self.mfsw.tick_1mhz(ticks)
-            self.fis.tick_1mhz(ticks)
-
     def step_batch(self):
-        t0 = time.monotonic()
-        c0 = self.proc.total_cycles
+        self.governor.batch()
         recent_pcs = deque(maxlen=self._disasm_history.maxlen)
         for _ in range(self.steps_per_frame):
             if self.proc.run_state != RunState.HALTED:
                 recent_pcs.append(self.proc.pc)
             self.proc.step()
-            self._tick_reference()
+            cycles = self.proc.inst_cycles
+            self.governor.advance(cycles)
+            self.reference_tick.advance(cycles)
         for pc in recent_pcs:
             self._disasm_at(pc)
-        elapsed = time.monotonic() - t0
-        if elapsed > 0:
-            self.potential_mhz = ((self.proc.total_cycles - c0) / elapsed) / 1_000_000
 
-    def throttle_delay(self):
-        if self.speed_pct <= 0:
-            return 0.05
-        target_hz = self.SYSTEM_CLOCK_HZ * self.speed_pct / 100
-        cycles_since_epoch = self.proc.total_cycles - self._epoch_cycles
-        target_wall = cycles_since_epoch / target_hz
-        actual_wall = time.monotonic() - self._epoch_time
-        return max(0, target_wall - actual_wall)
 
     def reset(self):
         self.proc.bus.reset()
         configure_interrupts(self.proc)
         self._disasm_history.clear()
-        self.real_mhz = 0.0
-        self.potential_mhz = 0.0
+        self.governor.reset()
 
     def get_listing_slice(self):
         if not self._listing:
@@ -198,7 +169,9 @@ class Emulator:
     def step_one(self):
         self._disasm_at(self.proc.pc)
         self.proc.step()
-        self._tick_reference()
+        cycles = self.proc.inst_cycles
+        self.governor.advance(cycles)
+        self.reference_tick.advance(cycles)
 
     def handle_command(self, cmd):
         action = cmd.get('action')
@@ -208,6 +181,7 @@ class Emulator:
 
         elif action == 'stop':
             self.running = False
+            self.governor.reset()
 
         elif action == 'step':
             if not self.running:
@@ -217,10 +191,6 @@ class Emulator:
             self.running = False
             self.reset()
 
-        elif action == 'speed':
-            self.speed_pct = cmd.get('value', 100)
-            self._epoch_time = time.monotonic()
-            self._epoch_cycles = self.proc.total_cycles
 
         elif action == 'power_key':
             self._power_key.set_high()   # release (ensures edge on re-press)
@@ -249,11 +219,10 @@ class Emulator:
 def emulator_thread(emulator):
     while True:
         with emulator.lock:
-            if emulator.running and emulator.speed_pct > 0:
+            if emulator.running:
                 emulator.step_batch()
                 emulator.state_changed.notify_all()
-        if emulator.running and emulator.speed_pct > 0:
-            delay = emulator.throttle_delay()
-            time.sleep(delay)
+        if emulator.running:
+            emulator.governor.throttle()
         else:
             time.sleep(0.05)

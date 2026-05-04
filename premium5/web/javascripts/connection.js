@@ -49,7 +49,6 @@ class Connection {
     step()      { this._send('step'); }
     reset()     { this._send('reset'); }
     state()     { this._send('state'); }
-    speed(val)  { this._send('speed', {value: val}); }
 
     // Faceplate button input
     buttonDown(buttonCode) {
