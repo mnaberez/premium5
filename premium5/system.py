@@ -209,18 +209,3 @@ def _eeprom_checksum_bytes(data):
             a = (a + 1) & 0xFF
             x &= 0xFF
     return (a << 8) | x
-
-
-def configure_interrupts(proc):
-    """Pre-configure interrupt priorities to match firmware expectations.
-    Must be called after bus.reset().
-
-    The firmware sets INTWTNI0 to high priority on every ISR entry,
-    but the very first interrupt fires with the default low priority.
-    Pre-setting it avoids the low-priority first entry whose pushed
-    PSW has ISP=0, which allows nesting on the return.
-    """
-    intc = proc.bus.device("intc")
-    # Set INTWTNI0 to high priority (clear bit 0 of PR1L)
-    pr1l = intc.read(intc.PR1L)
-    intc.write(intc.PR1L, pr1l & 0xFE)

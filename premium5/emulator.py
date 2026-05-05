@@ -7,7 +7,7 @@ from collections import deque
 
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
-from premium5.system import make_processor, populate_eeprom, configure_interrupts
+from premium5.system import make_processor, populate_eeprom
 from premium5.digital import Level, LogicOutput, Inverter
 from premium5.mfsw import MFSWTransmitter
 from premium5.timing import Governor, ReferenceTick
@@ -44,7 +44,6 @@ class Emulator:
             self.proc.bus.device("rom").load(0, f.read())
         populate_eeprom(self.proc)
         self.proc.bus.reset()
-        configure_interrupts(self.proc)
         csi30 = self.proc.bus.device("csi30")
         self.upd = csi30.upd
         self.fis = csi30.fis
@@ -157,7 +156,6 @@ class Emulator:
 
     def reset(self):
         self.proc.bus.reset()
-        configure_interrupts(self.proc)
         self._disasm_history.clear()
         self.governor.reset()
 
