@@ -338,10 +338,16 @@ class SPIControllerDevice(BaseDevice):
         1: CSIM3x - mode control
     """
 
+    # registers
     SIO  = 0
     CSIM = 1
 
+    # device-local interrupt id
     INT_TRANSFER = 0
+
+    # clock phases
+    _CLK_FALLING = 0
+    _CLK_RISING = 1
 
     def __init__(self, name):
         super().__init__(name)
@@ -353,58 +359,102 @@ class SPIControllerDevice(BaseDevice):
         self.reset()
 
     def reset(self):
+        # register defaults
         self._sio = 0x00
         self._csim = 0x00
+
+        # prescaler
+        self._cycles_per_sck_edge = 0    # total
+        self._cycles_until_sck_edge = 0  # remaining
+
+        # internal shifting state
+        self._clk_phase = self._CLK_FALLING
         self._shift_out = 0x00
         self._shift_in = 0x00
-        self._bit_count = 0
-        self._clk_phase = 0
-        self._transferring = False
+        self._bits_remaining = 0
+
+        # enable
         self.enabled_out.set_low()
 
     def read(self, register):
         self._check_bounds(register)
-        if register == self.SIO:
+
+        if register == self.CSIM:
+            return self._csim
+
+        elif register == self.SIO:
             return self._sio
-        return self._csim
 
     def write(self, register, value):
         self._check_bounds(register)
+
         if register == self.CSIM:
+            was_enabled = self._csim & 0x80
             self._csim = value
-            if value & 0x80:
+            
+            if self._csim & 0x80:
+                # now enabled
                 self.enabled_out.set_high()
             else:
+                # now disabled
+                if was_enabled:
+                    self._sio = 0x00
+                    self._bits_remaining = 0
                 self.enabled_out.set_low()
-            return
 
-        self._shift_out = value
-        self._shift_in = 0x00
-        self._bit_count = 0
-        self._transferring = True
+            # CPU ticks between each SCK edge (half the SPI clock period).
+            # Each bit takes two half-periods: falling edge, then rising edge.
+            self._cycles_per_sck_edge = (
+                0,       # 0b00: External clock in from SCK30 (XXX not emulated)
+                8  // 2, # 0b01: fX/8  (524 kHz)
+                16 // 2, # 0b10: fX/16 (262 kHz)
+                64 // 2, # 0b11: fX/64 (65.5 kHz)
+            )[self._csim & 0x03]
+
+        elif register == self.SIO:
+            if self._csim & 0x80:
+                # write to SIO while enabled starts a transfer
+                self._shift_out = value
+                self._shift_in = 0x00
+                self._bits_remaining = 8
+                self._clk_phase = self._CLK_FALLING
+                self._cycles_until_sck_edge = self._cycles_per_sck_edge
 
     def tick(self, cycles):
-        if not self._transferring:
-            return
+        for _ in range(cycles):
+            if self._bits_remaining == 0:
+                return # nothing for the spi controller to do
 
-        if self._bit_count >= 8:
-            self._sio = self._shift_in
-            self._transferring = False
-            self.bus.interrupt(self, self.INT_TRANSFER)
-            return
+            self._cycles_until_sck_edge -= 1
+            if self._cycles_until_sck_edge > 0:
+                continue # not time yet, loop to consume another cycle
 
-        if self._clk_phase == 0:
-            # Falling edge: shift out data bit (MSB first)
-            bit = (self._shift_out >> (7 - self._bit_count)) & 1
-            if bit:
-                self.dat_out.set_high()
+            # it's time to shift a bit in/out
+            if self._clk_phase == self._CLK_FALLING:
+                # Falling edge: shift out MSB
+                if self._shift_out & 0x80:
+                    self.dat_out.set_high()
+                else:
+                    self.dat_out.set_low()
+                self._shift_out = (self._shift_out << 1) & 0xFF
+
+                self.clk_out.set_low()
+                self._clk_phase = self._CLK_RISING
+
             else:
-                self.dat_out.set_low()
-            self.clk_out.set_low()
-            self._clk_phase = 1
-        else:
-            # Rising edge: latch input data bit
-            self._shift_in |= (int(self.dat_in) << (7 - self._bit_count))
-            self.clk_out.set_high()
-            self._clk_phase = 0
-            self._bit_count += 1
+                # Rising edge: shift in from dat_in
+                self._shift_in = (self._shift_in << 1) & 0xFF
+                if self.dat_in.high:
+                    self._shift_in |= 1
+
+                self.clk_out.set_high()
+                self._clk_phase = self._CLK_FALLING
+
+                # decrement bits remaining, fire interrupt if done
+                self._bits_remaining -= 1
+                if self._bits_remaining == 0:
+                    self._sio = self._shift_in
+                    self.bus.interrupt(self, self.INT_TRANSFER)
+
+            # bit has been shifted; reload to wait for the next bit
+            self._cycles_until_sck_edge = self._cycles_per_sck_edge

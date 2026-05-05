@@ -1,5 +1,5 @@
 import unittest
-from premium5.devices import Port0Device, Port9Device
+from premium5.devices import Port0Device, Port9Device, SPIControllerDevice
 
 
 class Port0DeviceTests(unittest.TestCase):
@@ -32,3 +32,248 @@ class Port9DeviceTests(unittest.TestCase):
         p9 = Port9Device()
         for i in range(8):
             self.assertFalse(p9.pins[i].high)
+
+
+class SPIControllerDeviceTests(unittest.TestCase):
+
+    def _make_spi(self):
+        spi = SPIControllerDevice("csi30")
+        spi.bus = self
+        self.interrupts = []
+        return spi
+
+    def interrupt(self, device, int_num):
+        self.interrupts.append((device, int_num))
+
+    def _enable(self, spi):
+        spi.write(spi.CSIM, 0x81)  # enabled, SCL=01 (fX/8)
+
+    def _transfer(self, spi):
+        """Tick through a full 8-bit transfer at fX/8 (4 ticks per edge, 64 total)."""
+        for _ in range(64):
+            spi.tick(1)
+
+    # enable/disable (CSIE bit 7 of CSIM)
+
+    def test_starts_disabled(self):
+        spi = self._make_spi()
+        self.assertTrue(spi.enabled_out.low)
+
+    def test_enable_sets_enabled_out_high(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x80)
+        self.assertTrue(spi.enabled_out.high)
+
+    def test_disable_sets_enabled_out_low(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x80)
+        spi.write(spi.CSIM, 0x00)
+        self.assertTrue(spi.enabled_out.low)
+
+    def test_disable_clears_sio(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x80)
+        spi.write(spi.SIO, 0xA5)
+        spi.write(spi.CSIM, 0x00)
+        self.assertEqual(spi.read(spi.SIO), 0x00)
+
+    def test_disable_stops_transfer(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0xA5)
+        spi.write(spi.CSIM, 0x00)
+        # ticking should do nothing — transfer was stopped
+        spi.tick(100)
+        self.assertEqual(self.interrupts, [])
+
+    # write to SIO
+
+    def test_write_sio_when_disabled_does_not_start_transfer(self):
+        spi = self._make_spi()
+        spi.write(spi.SIO, 0xA5)
+        spi.tick(100)
+        self.assertEqual(self.interrupts, [])
+
+    def test_write_sio_when_enabled_starts_transfer(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0xA5)
+        spi.tick(4)  # first edge at fX/8
+        self.assertTrue(spi.clk_out.low)
+
+    # reset
+
+    def test_reset_clears_sio(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0xA5)
+        spi.reset()
+        self.assertEqual(spi.read(spi.SIO), 0x00)
+
+    def test_reset_clears_csim(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.reset()
+        self.assertEqual(spi.read(spi.CSIM), 0x00)
+
+    def test_reset_sets_enabled_out_low(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.reset()
+        self.assertTrue(spi.enabled_out.low)
+
+    # read
+
+    def test_read_sio_returns_shift_register(self):
+        spi = self._make_spi()
+        self.assertEqual(spi.read(spi.SIO), 0x00)
+
+    def test_read_csim_returns_mode_register(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        self.assertEqual(spi.read(spi.CSIM), 0x81)
+
+    # clock idle state
+
+    def test_clk_idles_high(self):
+        spi = self._make_spi()
+        self.assertTrue(spi.clk_out.high)
+
+    # transfer: clock output
+
+    def test_first_edge_drives_clk_low(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        spi.tick(4)  # fX/8: 4 ticks per edge
+        self.assertTrue(spi.clk_out.low)
+
+    def test_second_edge_drives_clk_high(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        spi.tick(4)
+        spi.tick(4)
+        self.assertTrue(spi.clk_out.high)
+
+    # transfer: data output (MSB first)
+
+    def test_shifts_out_msb_first(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0xA5)  # 10100101
+        bits = []
+        for _ in range(8):
+            spi.tick(4)  # falling edge: data set
+            bits.append(int(spi.dat_out.high))
+            spi.tick(4)  # rising edge
+        self.assertEqual(bits, [1, 0, 1, 0, 0, 1, 0, 1])
+
+    # transfer: data input
+
+    def test_shifts_in_dat_on_rising_edge(self):
+        spi = self._make_spi()
+        from premium5.digital import LogicOutput, Level
+        driver = LogicOutput(Level.LOW)
+        driver.bind(spi.dat_in)
+
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+
+        # clock in 0xC3 = 11000011
+        input_bits = [1, 1, 0, 0, 0, 0, 1, 1]
+        for bit in input_bits:
+            spi.tick(4)  # falling edge
+            if bit:
+                driver.set_high()
+            else:
+                driver.set_low()
+            spi.tick(4)  # rising edge: latch
+
+        self.assertEqual(spi.read(spi.SIO), 0xC3)
+
+    # transfer: completion
+
+    def test_transfer_completes_after_8_bits(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        self._transfer(spi)
+        self.assertEqual(len(self.interrupts), 1)
+
+    def test_transfer_fires_interrupt(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        self._transfer(spi)
+        self.assertEqual(len(self.interrupts), 1)
+        self.assertIs(self.interrupts[0][0], spi)
+        self.assertEqual(self.interrupts[0][1], spi.INT_TRANSFER)
+
+    def test_sio_holds_received_byte_after_transfer(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        self._transfer(spi)
+        # dat_in defaults LOW, so all received bits are 0
+        self.assertEqual(spi.read(spi.SIO), 0x00)
+
+    def test_clk_returns_high_after_transfer(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.write(spi.SIO, 0x00)
+        self._transfer(spi)
+        self.assertTrue(spi.clk_out.high)
+
+    # tick while idle
+
+    def test_tick_while_idle_does_nothing(self):
+        spi = self._make_spi()
+        self._enable(spi)
+        spi.tick(1)
+        self.assertTrue(spi.clk_out.high)
+        self.assertEqual(self.interrupts, [])
+
+    # prescaler
+
+    def test_prescaler_fx8_half_clock_is_4_ticks(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x81)  # enabled, SCL=01 (fX/8)
+        spi.write(spi.SIO, 0x80)
+        # CLK should stay high for 3 ticks, fall on tick 4
+        for _ in range(3):
+            spi.tick(1)
+            self.assertTrue(spi.clk_out.high)
+        spi.tick(1)
+        self.assertTrue(spi.clk_out.low)
+
+    def test_prescaler_fx16_half_clock_is_8_ticks(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x82)  # enabled, SCL=10 (fX/16)
+        spi.write(spi.SIO, 0x80)
+        for _ in range(7):
+            spi.tick(1)
+            self.assertTrue(spi.clk_out.high)
+        spi.tick(1)
+        self.assertTrue(spi.clk_out.low)
+
+    def test_prescaler_fx64_half_clock_is_32_ticks(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x83)  # enabled, SCL=11 (fX/64)
+        spi.write(spi.SIO, 0x80)
+        for _ in range(31):
+            spi.tick(1)
+            self.assertTrue(spi.clk_out.high)
+        spi.tick(1)
+        self.assertTrue(spi.clk_out.low)
+
+    def test_prescaler_full_byte_fx8(self):
+        spi = self._make_spi()
+        spi.write(spi.CSIM, 0x81)  # enabled, SCL=01 (fX/8)
+        spi.write(spi.SIO, 0xA5)
+        # 8 bits * 2 half-clocks * 4 ticks = 64 ticks
+        for _ in range(63):
+            spi.tick(1)
+        self.assertEqual(self.interrupts, [])
+        spi.tick(1)
+        self.assertEqual(len(self.interrupts), 1)
