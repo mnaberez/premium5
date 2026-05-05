@@ -7,10 +7,9 @@ from collections import deque
 
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
-from premium5.system import make_processor
-from premium5.eeprom import populate_eeprom
-from premium5.digital import Level, LogicOutput, Inverter
-from premium5.mfsw import MFSWTransmitter
+from premium5.eeprom import populate
+from premium5.machine import Machine
+from premium5.digital import Level, LogicOutput
 from premium5.timing import Governor, ReferenceTick
 
 
@@ -40,28 +39,25 @@ class Emulator:
     SYSTEM_CLOCK_HZ = 4_190_000  # cpu clock frequency (4.19 MHz)
 
     def __init__(self, rom_path, listing=None):
-        self.proc = make_processor()
+        machine = Machine()
+        mcu = machine.mcu
+        self.proc = mcu.proc
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
-        populate_eeprom(self.proc)
+        populate(self.proc)
         self.proc.bus.reset()
-        csi30 = self.proc.bus.device("csi30")
-        self.upd = csi30.upd
-        self.fis = csi30.fis
+        self.upd = machine.upd
+        self.fis = machine.fis
 
-        p0 = self.proc.bus.device("p0")
-        self._p3 = self.proc.bus.device("p3")
+        self._p3 = mcu.p3
 
-        self.mfsw = MFSWTransmitter()
-        inverter = Inverter()
-        self.mfsw.swc_out.bind(inverter.input)
-        inverter.output.bind(p0.pins[0].input)
+        self.mfsw = machine.mfsw
 
         self._power_key = LogicOutput(Level.HIGH)
-        self._power_key.bind(p0.pins[4].input)
+        self._power_key.bind(mcu.p0.pins[4].input)
 
         self._p02_driver = LogicOutput(Level.HIGH)
-        self._p02_driver.bind(p0.pins[2].input)
+        self._p02_driver.bind(mcu.p0.pins[2].input)
 
         self.governor = Governor(self.SYSTEM_CLOCK_HZ)
         self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)

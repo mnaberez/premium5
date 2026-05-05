@@ -142,6 +142,39 @@ class Inverter(object):
         self.input.on_falling = self.output.set_high
 
 
+class InputMux(object):
+    """Routes one of two inputs to an output based on a select signal.
+
+    select LOW:  input_a routes to output
+    select HIGH: input_b routes to output
+    """
+
+    def __init__(self):
+        self.select = LogicInput(pull_level=Level.LOW)
+
+        self.input_a = LogicInput()
+        self.input_b = LogicInput()
+        self.output = LogicOutput()
+
+        self.select.on_falling = self._route_input_a_to_output
+        self.select.on_rising  = self._route_input_b_to_output
+        self._route_input_a_to_output()
+
+    def _route_input_a_to_output(self):
+        self.output.set_level(self.input_a.level)
+        self.input_a.on_rising = self.output.set_high
+        self.input_a.on_falling = self.output.set_low
+        self.input_b.on_rising = LogicInput._no_callback
+        self.input_b.on_falling = LogicInput._no_callback
+
+    def _route_input_b_to_output(self):
+        self.output.set_level(self.input_b.level)
+        self.input_b.on_rising = self.output.set_high
+        self.input_b.on_falling = self.output.set_low
+        self.input_a.on_rising = LogicInput._no_callback
+        self.input_a.on_falling = LogicInput._no_callback
+
+
 class Mux(object):
     """Routes an input to one of two outputs based on a select signal.
 

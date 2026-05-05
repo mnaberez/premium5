@@ -349,6 +349,7 @@ class SPIControllerDevice(BaseDevice):
         self.clk_out = LogicOutput(Level.HIGH)
         self.dat_out = LogicOutput()
         self.dat_in = LogicInput(pull_level=Level.LOW)
+        self.enabled_out = LogicOutput(Level.LOW)
         self.reset()
 
     def reset(self):
@@ -359,6 +360,7 @@ class SPIControllerDevice(BaseDevice):
         self._bit_count = 0
         self._clk_phase = 0
         self._transferring = False
+        self.enabled_out.set_low()
 
     def read(self, register):
         self._check_bounds(register)
@@ -370,6 +372,10 @@ class SPIControllerDevice(BaseDevice):
         self._check_bounds(register)
         if register == self.CSIM:
             self._csim = value
+            if value & 0x80:
+                self.enabled_out.set_high()
+            else:
+                self.enabled_out.set_low()
             return
 
         self._shift_out = value
