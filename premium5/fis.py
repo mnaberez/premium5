@@ -1,8 +1,39 @@
 from premium5.digital import Level, LogicInput, LogicOutput
 
 
-class FISReceiver(object):
-    """Instrument cluster side of the 3LB (FIS) bus.
+class FIS:
+    """FIS display in the instrument cluster.
+
+    Receives packets from the radio via SPI ("3LB") and maintains
+    a display buffer with what the FIS would display.
+
+    This object is a facade for the receiver (wire protocol) and the
+    interpreter (interprets commands).  The emulator should only be
+    wired to this object, which exposes the electrical interface and
+    the display data.  It needs to be ticked at 1 MHz by the
+    ReferenceTick source so things like timeouts work.
+    """
+
+    def __init__(self):
+        self._intp = FISInterpreter()
+        self._recv = FISReceiver(self._intp.interpret)
+
+        # electrical interface
+        self.clk_in  = self._recv.clk_in
+        self.dat_in  = self._recv.dat_in
+        self.ena_in  = self._recv.ena_in
+        self.ena_out = self._recv.ena_out
+
+    @property
+    def radio_data(self):
+        return self._intp.radio_data
+
+    def tick_1mhz(self, cycles=1):
+        self._recv.tick_1mhz(cycles)
+
+
+class FISReceiver:
+    """FIS 3LB (three line bus) receiver.
 
     Receives bytes from the radio via CLK/DAT, with ENA handshaking.
     After the radio sends the first byte (signaled by ENA pulse on
@@ -19,6 +50,10 @@ class FISReceiver(object):
     CLK/DAT could in theory be directly connected to the radio's SPI controller
     CSI30.  In practice, they need to be connected through a transparent mux
     (CSI30Mux) because CSI30 is also used to drive the uPD16432B.
+
+    This receiver handles the wire protocol only: SPI bit shifting, ENA
+    handshake timing, packet assembly, and checksum validation.  When a
+    valid packet is received, it fires a callback.
     """
 
     class _State:
@@ -37,15 +72,14 @@ class FISReceiver(object):
     RECEIVING_BIT        = _State(ticks=100)   # 100us, ~12x the 8us bit period at 125 kHz
     DELAYING_ENA_ACK     = _State(ticks=120)   # 120us, cluster processing time before ack
 
-    def __init__(self):
+    def __init__(self, packet_callback):
+        self._packet_callback = packet_callback
+
         # electrical interface
         self.clk_in = LogicInput()
         self.dat_in = LogicInput()
         self.ena_in = LogicInput()
         self.ena_out = LogicOutput(Level.LOW)
-
-        # received display data
-        self.radio_data = bytearray()
 
         # state machine
         self._state = self.WAITING_FOR_ENA_RISE
@@ -164,7 +198,7 @@ class FISReceiver(object):
             self._bytes_expected = byte + 2
 
         if len(self._packet) == self._bytes_expected:
-            # Packet complete: process it and return to idle
+            # Packet complete: validate and deliver
             self._on_packet()
             self._transition(self.WAITING_FOR_ENA_RISE)
         else:
@@ -181,8 +215,7 @@ class FISReceiver(object):
         if self._packet[-1] != ((csum - 1) & 0xFF):
             return
 
-        if self._packet[0] == 0x81:
-            self.radio_data = bytearray(self._packet[2:-1])
+        self._packet_callback(self._packet)
 
     def _transition(self, state):
         self._state = state
@@ -192,3 +225,32 @@ class FISReceiver(object):
         # self._state can be interrogated here to see what aborted
         self.ena_out.set_low()
         self._transition(self.WAITING_FOR_ENA_RISE)
+
+
+class FISInterpreter:
+    """Interprets FIS packets and updates display state."""
+
+    def __init__(self):
+        self.radio_data = bytearray(b'\x20' * 16)
+
+    def interpret(self, packet):
+        """Interpret the command in the FIS packet from the radio.  The
+        packet must have already been validated (length and checksum)."""
+
+        cmd = packet[0]
+        if cmd == 0x81:
+            self._cmd_radio_text(packet)
+
+    def _cmd_radio_text(self, packet):
+        # ensure we have exactly 16 bytes of printable ascii
+        data = bytearray(packet[3:-1])[:16].ljust(16, b'\x20')
+        for i in range(len(data)):
+            if (data[i] < 0x20) or (data[i] >= 0x7f):
+                data[i] = 0x20
+
+        # split into two lines of 8 bytes, center justify each
+        line1 = data[:8].strip(b'\x20').center(8, b'\x20')
+        line2 = data[8:].strip(b'\x20').center(8, b'\x20')
+
+        # recombine the filtered/justified lines
+        self.radio_data = line1 + line2

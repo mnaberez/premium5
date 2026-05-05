@@ -1,13 +1,14 @@
 import unittest
 from premium5.digital import Level, LogicOutput
-from premium5.fis import FISReceiver
+from premium5.fis import FIS, FISReceiver, FISInterpreter
 
 
 class FISReceiverTestCase(unittest.TestCase):
     """Base class for FIS receiver tests"""
 
     def setUp(self):
-        self.fis = FISReceiver()
+        self.packets = []
+        self.fis = FISReceiver(self.packets.append)
         self.clk = LogicOutput(Level.HIGH)   # CPOL=1: idles HIGH
         self.dat = LogicOutput(Level.HIGH)
         self.ena = LogicOutput(Level.LOW)    # ENA idles LOW
@@ -66,8 +67,8 @@ class InitialStateTests(FISReceiverTestCase):
     def test_ena_out_starts_low(self):
         self.assertTrue(self.fis.ena_out.low)
 
-    def test_radio_data_starts_empty(self):
-        self.assertEqual(self.fis.radio_data, bytearray())
+    def test_no_packets_received_initially(self):
+        self.assertEqual(self.packets, [])
 
 
 class ENAPulseTests(FISReceiverTestCase):
@@ -221,22 +222,17 @@ class PacketAssemblyTests(FISReceiverTestCase):
         self._clock_byte(0x12)  # length=18
         self.assertEqual(self.fis._bytes_expected, 20)  # 18 + 2
 
-    def test_bad_checksum_does_not_update_radio_data(self):
+    def test_bad_checksum_does_not_deliver_packet(self):
         packet = bytearray(self._radio_text_packet())
         packet[-1] ^= 0xFF  # corrupt checksum
         self._send_packet(packet)
-        self.assertEqual(self.fis.radio_data, bytearray())
+        self.assertEqual(self.packets, [])
 
-    def test_short_packet_does_not_update_radio_data(self):
-        # packet with length=1: cmd + length + checksum = 3 bytes
+    def test_minimal_valid_packet_is_delivered(self):
+        # cmd + length + checksum = 3 bytes, valid checksum
         packet = self._build_packet(0x81, b'')
         self._send_packet(packet)
-        self.assertEqual(self.fis.radio_data, bytearray())
-
-    def test_unknown_command_does_not_update_radio_data(self):
-        packet = self._build_packet(0x99, b'\xF0ABCDEFGHIJKLMNOP')
-        self._send_packet(packet)
-        self.assertEqual(self.fis.radio_data, bytearray())
+        self.assertEqual(len(self.packets), 1)
 
 
 class SpuriousEdgeTests(FISReceiverTestCase):
@@ -271,16 +267,15 @@ class EndToEndTests(FISReceiverTestCase):
 
     def test_receive_radio_text_packet(self):
         self._send_packet(self._radio_text_packet())
-        self.assertEqual(self.fis.radio_data, bytearray(b'\xF0FM1 1    93.5MHZ'))
+        self.assertEqual(len(self.packets), 1)
+        self.assertEqual(self.packets[0][0], 0x81)
         self.assertIs(self.fis._state, self.fis.WAITING_FOR_ENA_RISE)
 
     def test_receive_two_packets_consecutively(self):
         self._send_packet(self._radio_text_packet())
-        self.assertEqual(self.fis.radio_data, bytearray(b'\xF0FM1 1    93.5MHZ'))
-
         packet2 = self._build_packet(0x81, b'\xF0AM1 1    530 KHZ')
         self._send_packet(packet2)
-        self.assertEqual(self.fis.radio_data, bytearray(b'\xF0AM1 1    530 KHZ'))
+        self.assertEqual(len(self.packets), 2)
 
     def test_state_returns_to_idle_after_packet(self):
         self._send_packet(self._radio_text_packet())
@@ -298,4 +293,99 @@ class EndToEndTests(FISReceiverTestCase):
         self.assertIs(self.fis._state, self.fis.WAITING_FOR_ENA_RISE)
         # now send a full valid packet
         self._send_packet(self._radio_text_packet())
-        self.assertEqual(self.fis.radio_data, bytearray(b'\xF0FM1 1    93.5MHZ'))
+        self.assertEqual(len(self.packets), 1)
+
+
+class FISInterpreterTests(unittest.TestCase):
+    """Tests for FISInterpreter command dispatch and display formatting."""
+
+    def _checksum(self, packet):
+        """Append a valid checksum to a packet bytearray."""
+        csum = 0
+        for b in packet:
+            csum ^= b
+        packet.append((csum - 1) & 0xFF)
+        return packet
+
+    def setUp(self):
+        self.intp = FISInterpreter()
+
+    # initial state
+
+    def test_radio_data_starts_as_16_spaces(self):
+        self.assertEqual(self.intp.radio_data, bytearray(b' ' * 16))
+
+    # 0x81 radio text: short data padded
+
+    def test_short_data_padded_to_16_bytes(self):
+        packet = self._checksum(bytearray(b'\x81\x04\xF0AB'))
+        self.intp.interpret(packet)
+        self.assertEqual(len(self.intp.radio_data), 16)
+
+    def test_long_data_truncated_to_16_bytes(self):
+        packet = self._checksum(bytearray(b'\x81\x1a\xF0' + b'X' * 24))
+        self.intp.interpret(packet)
+        self.assertEqual(len(self.intp.radio_data), 16)
+
+    # 0x81 radio text: non-printable characters replaced with space
+
+    def test_non_printable_bytes_replaced_with_space(self):
+        packet = self._checksum(bytearray(
+            b'\x81\x12\xF0\x00AB\x7fCD\x80E\xf0FGHIJ\x1f'))
+        self.intp.interpret(packet)
+        self.assertEqual(len(self.intp.radio_data), 16)
+        self.assertEqual(self.intp.radio_data, bytearray(b'AB CD E  FGHIJ  '))
+
+    # 0x81 radio text: center justification
+
+    def test_lines_are_center_justified(self):
+        cases = (
+            # trailing whitespace
+            (b'A       ', b'   A    '),
+            (b'AB      ', b'   AB   '),
+            (b'ABC     ', b'  ABC   '),
+            (b'ABCD    ', b'  ABCD  '),
+            (b'ABCDE   ', b' ABCDE  '),
+            (b'ABCDEF  ', b' ABCDEF '),
+            (b'ABCDEFG ', b'ABCDEFG '),
+            (b'ABCDEFGH', b'ABCDEFGH'),
+
+            # leading whitespace
+            (b'       1', b'   1    '),
+            (b'      12', b'   12   '),
+            (b'     123', b'  123   '),
+            (b'    1234', b'  1234  '),
+            (b'   12345', b' 12345  '),
+            (b'  123456', b' 123456 '),
+            (b' 1234567', b'1234567 '),
+            (b'12345678', b'12345678'),
+        )
+        for input_line, expected in cases:
+            # test as line 1
+            packet = self._checksum(bytearray(b'\x81\x12\xF0' + input_line + b'12345678'))
+            self.intp.interpret(packet)
+            self.assertEqual(len(self.intp.radio_data), 16)
+            self.assertEqual(self.intp.radio_data[:8], bytearray(expected))
+
+            # test as line 2
+            packet = self._checksum(bytearray(b'\x81\x12\xF0' + b'12345678' + input_line))
+            self.intp.interpret(packet)
+            self.assertEqual(len(self.intp.radio_data), 16)
+            self.assertEqual(self.intp.radio_data[8:], bytearray(expected))
+
+    # 0x81 radio text: typical decoding
+
+    def test_radio_text_decodes_two_lines(self):
+        packet = self._checksum(bytearray(b'\x81\x12\xF0FM1 1    93.5MHZ'))
+        self.intp.interpret(packet)
+        self.assertEqual(len(self.intp.radio_data), 16)
+        self.assertEqual(self.intp.radio_data[:8], bytearray(b' FM1 1  '))
+        self.assertEqual(self.intp.radio_data[8:], bytearray(b'93.5MHZ '))
+
+    # unknown command ignored
+
+    def test_unknown_command_does_not_change_radio_data(self):
+        packet = self._checksum(bytearray(b'\x99\x12\xF0XXXXXXXXYYYYYYYY'))
+        self.intp.interpret(packet)
+        self.assertEqual(len(self.intp.radio_data), 16)
+        self.assertEqual(self.intp.radio_data, bytearray(b' ' * 16))

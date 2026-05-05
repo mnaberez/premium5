@@ -137,17 +137,14 @@ class EmulatorState {
 }
 
 function decodeFISRadioData(hexStr) {
-    if (!hexStr || hexStr.length < 2) return ['        ', '        '];
     const bytes = EmulatorState._decodeHex(hexStr);
     let line1 = '';
     let line2 = '';
-    for (let i = 1; i <= 8; i++) {
-        const b = (i < bytes.length) ? bytes[i] : 0;
-        line1 += (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : ' ';
+    for (let i = 0; i < 8; i++) {
+        line1 += String.fromCharCode(bytes[i]);
     }
-    for (let i = 9; i <= 16; i++) {
-        const b = (i < bytes.length) ? bytes[i] : 0;
-        line2 += (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : ' ';
+    for (let i = 8; i < 16; i++) {
+        line2 += String.fromCharCode(bytes[i]);
     }
     return [line1, line2];
 }
