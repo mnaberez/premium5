@@ -7,7 +7,8 @@ from collections import deque
 
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
-from premium5.system import make_processor, populate_eeprom
+from premium5.system import make_processor
+from premium5.eeprom import populate_eeprom
 from premium5.digital import Level, LogicOutput, Inverter
 from premium5.mfsw import MFSWTransmitter
 from premium5.timing import Governor, ReferenceTick
