@@ -116,7 +116,7 @@ class Emulator:
             'display_pixels': display_pixels,
             'pictograph_ram': pictograph_ram,
             'led': led,
-            'fis_radio_data': bytes(self.fis.radio_data).hex(),
+            'fis_display_pixels': bytes(self.fis.display_pixels).hex(),
             'real_mhz': self.governor.real_mhz,
             'potential_mhz': self.governor.potential_mhz,
             'exp_ram': bytes(exp_ram).hex(),

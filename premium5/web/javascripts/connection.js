@@ -109,7 +109,7 @@ class EmulatorState {
         this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
         this.activePictographs = EmulatorState._decodePictographs(data.pictograph_ram);
         this.led = data.led;
-        this.fisRadioData = data.fis_radio_data;
+        this.fisDisplayPixels = EmulatorState._decodeHex(data.fis_display_pixels);
 
         // Memory dumps
         this.expRam = data.exp_ram;
@@ -136,18 +136,6 @@ class EmulatorState {
     }
 }
 
-function decodeFISRadioData(hexStr) {
-    const bytes = EmulatorState._decodeHex(hexStr);
-    let line1 = '';
-    let line2 = '';
-    for (let i = 0; i < 8; i++) {
-        line1 += String.fromCharCode(bytes[i]);
-    }
-    for (let i = 8; i < 16; i++) {
-        line2 += String.fromCharCode(bytes[i]);
-    }
-    return [line1, line2];
-}
 
 // Identifies a faceplate button.  The Connection translates these
 // into the appropriate server commands (uPD16432B key scan codes

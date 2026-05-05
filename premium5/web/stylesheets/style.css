@@ -116,18 +116,15 @@ h1 {
     padding-top: 4px;
 }
 .fis-display {
-    font-family: monospace;
-    font-size: 14px;
     background: #1A0505;
-    color: #FF2A1A;
-    padding: 4px 8px;
-    line-height: 1.4;
     border-radius: 4px;
+    padding: 6px 8px 3px;
 }
-.fis-line {
-    font-size: 18px;
-    font-weight: bold;
-    white-space: pre;
+#fis-canvas {
+    display: block;
+    image-rendering: pixelated;
+    width: 192px;
+    height: 48px;
 }
 
 .status-text {

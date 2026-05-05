@@ -58,10 +58,7 @@
             <div class="mfsw-controls"><span class="mfsw-label">MFSW:</span><button onclick="sendMFSW('vol_down')">VOL -</button><button onclick="sendMFSW('vol_up')">VOL +</button><button onclick="sendMFSW('up')">UP</button><button onclick="sendMFSW('down')">DOWN</button></div>
             <div class="mfsw-controls fis-row">
                 <span class="fis-label">FIS:</span>
-                <div class="fis-display">
-                    <div class="fis-line" id="fis-line1">        </div>
-                    <div class="fis-line" id="fis-line2">        </div>
-                </div>
+                <div class="fis-display"><canvas id="fis-canvas" width="64" height="16"></canvas></div>
             </div>
         </div>
     </div>
@@ -105,6 +102,7 @@
 
 <script src="javascripts/connection.js"></script>
 <script src="javascripts/faceplate.js"></script>
+<script src="javascripts/fis.js"></script>
 <script src="javascripts/views.js"></script>
 <script src="javascripts/controls.js"></script>
 <script src="javascripts/app.js"></script>

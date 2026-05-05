@@ -12,6 +12,8 @@ const ramExp = new MemoryView(document.getElementById('mem-exp-ram'), 2048, 0xF0
 const eeprom = new MemoryView(document.getElementById('mem-eeprom'), 512, 0x0000, 'eeprom');
 const statisticsView = new StatisticsView(document.getElementById('statistics-view'));
 
+const fisDisplay = new FISDisplay(document.getElementById('fis-canvas'));
+
 const conn = new Connection();
 conn.onStateReceived = function(state) {
     faceplate.characterMatrix.draw(state.displayPixels);
@@ -26,9 +28,7 @@ conn.onStateReceived = function(state) {
     eeprom.update(state);
     statisticsView.update(state);
     controls.updateStatus(state);
-    const fisLines = decodeFISRadioData(state.fisRadioData);
-    document.getElementById('fis-line1').textContent = fisLines[0];
-    document.getElementById('fis-line2').textContent = fisLines[1];
+    fisDisplay.draw(state.fisDisplayPixels);
 };
 conn.onOpen = function() {
     controls.stop();
