@@ -1,3 +1,4 @@
+from collections import namedtuple
 from k0emu.devices import BaseDevice
 from premium5.digital import LogicInput, LogicOutput, Level
 
@@ -508,6 +509,11 @@ class _UARTBaudRateGenerator:
         self._cycles_per_toggle = cycles_per_bit // 2
 
     def enable(self):
+        """The BRG's contract with the transmitter and receiver
+        is that when enabled, its output will be low for exactly
+        one half bit period.  The output will then go high and
+        continue to toggle (invert) every half bit period.
+        """
         self._enabled = True
         self.baud_clk_out.set_low()
         self._cycles_until_toggle = self._cycles_per_toggle
@@ -529,19 +535,182 @@ class _UARTBaudRateGenerator:
             self.baud_clk_out.toggle()
 
 
+class _UARTReceiver:
+    """UART receive shift register.
+
+    Receives bits on rxd_in.  When a frame is complete, a data
+    byte and/or error is delivered via callbacks.
+    """
+
+    def __init__(self, rxd_in, on_complete, on_error):
+        self._rxd_in = rxd_in
+        self.on_complete = on_complete
+        self.on_error = on_error
+
+        self._brg = _UARTBaudRateGenerator()
+        self._brg_clk_in = LogicInput()
+        self._brg.baud_clk_out.bind(self._brg_clk_in)
+        self._brg_clk_in.on_rising = self._on_baud_clk_rising
+
+        self.reset()
+
+    def reset(self):
+        self._data_bits = 8
+        self._parity = UARTDevice.PARITY_NONE
+        self._stop_bits = 1
+
+        self._shift = 0
+        self._bits_remaining = 0
+        self._bits_received = 0
+        self._enabled = False
+
+        self._brg.reset()
+
+    def configure_brg(self, tps, mdl):
+        self._brg.configure(tps, mdl)
+
+    def configure_frame(self, data_bits, parity, stop_bits):
+        self._data_bits = data_bits
+        self._parity = parity
+        self._stop_bits = stop_bits
+
+    def enable(self):
+        self._enabled = True
+
+    def disable(self):
+        self._shift = 0
+        self._bits_remaining = 0
+        self._enabled = False
+        self._brg.disable()
+
+    def tick(self, cycles):
+        self._brg.tick(cycles)
+
+    @property
+    def receiving(self):
+        return self._bits_remaining > 0
+
+    def _on_rxd_falling(self):
+        """Start bit detection:
+
+        The receiver samples exactly in the middle of each bit.  To
+        achieve this, its BRG is started fresh on each frame.
+
+        RxD idles high.  The first falling edge on RxD is the beginning
+        of the start bit.  We start the BRG on this edge.  The BRG 
+        outputs a square wave where one bit period is the time between
+        rising edges.  When the BRG starts, it is guaranteed to be low 
+        for exactly one half bit period.  This means that each rising
+        edge of the BRG will be exactly in the middle of a bit:
+
+             ____
+        RxD:     |_____start_____|______D0______|______D1______|
+                 ^       ^              ^              ^      
+            we are      BRG            BRG            BRG     
+             here      rise #1        rise #2        rise #3  ... 
+                     (mid-start)     (mid-D0)       (mid-D1)
+        """
+
+        if not self._enabled:
+            return
+
+        # can't be the start bit if we are already receiving bits
+        if self.receiving:
+            return
+
+        # it's the beginning of the start bit (receiver always uses 1 stop bit)
+        self._bits_remaining = 1 + self._data_bits + 1
+        if self._parity != UARTDevice.PARITY_NONE:
+            self._bits_remaining += 1
+        self._shift = 0
+        self._bits_received = 0
+        self._brg.enable()
+
+    def _on_baud_clk_rising(self):
+        """BRG rising edge means we're in the middle of a bit so it's
+        time to sample RxD and shift it into the frame."""
+
+        if not self.receiving:
+            return
+
+        self._bits_received += 1
+
+        # uPD78F0833Y subseries manual: the start bit is confirmed at
+        # mid-bit.  If RxD is not still low, the frame is abandoned.
+        # This is presumably to filter out line glitches.
+        if self._bits_received == 1:
+            if self._rxd_in.high:
+                self._bits_remaining = 0
+                self._brg.disable()
+                return
+
+        self._shift >>= 1
+        if self._rxd_in.high:
+            total_bits = 1 + self._data_bits + 1
+            if self._parity != UARTDevice.PARITY_NONE:
+                total_bits += 1
+            self._shift |= (1 << (total_bits - 1))
+
+        self._bits_remaining -= 1
+
+        if self._bits_remaining == 0:
+            self._brg.disable()
+            self._deliver_frame()
+
+    def _deliver_frame(self):
+        frame = self._shift
+        bit_pos = 0
+
+        # uPD78F0833Y subseries manual: if the start bit is not 0
+        # at mid-bit, the receiver silently discards the frame.
+        start_bit = (frame >> bit_pos) & 1
+        bit_pos += 1
+        if start_bit != 0:
+            return
+
+        # data bits (LSB first)
+        data, ones = 0, 0
+        for i in range(self._data_bits):
+            bit = (frame >> bit_pos) & 1
+            data |= (bit << i)
+            ones += bit
+            bit_pos += 1
+
+        # parity bit
+        parity_error = False
+        if self._parity != UARTDevice.PARITY_NONE:
+            p = (frame >> bit_pos) & 1
+            bit_pos += 1
+            if self._parity == UARTDevice.PARITY_ZERO:
+                # uPD78F0833Y subseries manual: zero parity is not checked
+                # on receive, so parity errors never occur for zero parity.
+                pass
+            elif self._parity == UARTDevice.PARITY_EVEN:
+                parity_error = (p != (ones & 1))
+            elif self._parity == UARTDevice.PARITY_ODD:
+                parity_error = (p != ((ones & 1) ^ 1))
+
+        # uPD78F0833Y subseries manual: the receiver only checks one
+        # stop bit for framing errors, regardless of the SL0 setting.
+        stop_bit = (frame >> bit_pos) & 1
+        framing_error = (stop_bit != 1)
+        bit_pos += 1
+
+        if framing_error or parity_error:
+            error = _UARTReceiveError(data, framing_error, parity_error)
+            self.on_error(error)
+        else:
+            self.on_complete(data)
+
+_UARTReceiveError = namedtuple('_UARTReceiveError', ['data', 'framing_error', 'parity_error'])
+
+
 class _UARTTransmitter:
     """UART transmit shift register.
 
-    Builds the serial frame (start + data + parity + stop) and 
-    shifts it out one bit per baud clock rising edge on its
-    BRG's clock output.
+    Builds a serial frame (start + data + parity + stop) and 
+    shifts it out on txd_out.  Fires a callback when complete.
     """
-
-    # parity modes (PS01:PS00 from ASIM0)
-    PARITY_NONE = 0
-    PARITY_ZERO = 1
-    PARITY_ODD = 2
-    PARITY_EVEN = 3
 
     def __init__(self, txd_out, on_complete):
         self._txd_out = txd_out
@@ -556,7 +725,7 @@ class _UARTTransmitter:
 
     def reset(self):
         self._data_bits = 8
-        self._parity = self.PARITY_NONE
+        self._parity = UARTDevice.PARITY_NONE
         self._stop_bits = 1
 
         self._shift = 0
@@ -577,7 +746,7 @@ class _UARTTransmitter:
         self._brg.enable()
 
     def disable(self):
-        if self.busy:
+        if self.transmitting:
             # The uPD78F0833Y subseries manual says not to disable the UART
             # mid-transmission but doesn't say what happens if you do.  We've
             # chosen to shut down cleanly on disable.
@@ -590,11 +759,11 @@ class _UARTTransmitter:
         self._brg.tick(cycles)
 
     @property
-    def busy(self):
+    def transmitting(self):
         return self._bits_remaining > 0
 
     def transmit(self, data):
-        if self.busy:
+        if self.transmitting:
             # The uPD78F0833Y subseries manual says not to write to the TX
             # register while a TX is already in process but doesn't say what
             # happens if you do.  We've chosen to ignore second transmission.
@@ -616,12 +785,12 @@ class _UARTTransmitter:
             bit_pos += 1
 
         # parity bit
-        if self._parity != self.PARITY_NONE:
-            if self._parity == self.PARITY_ZERO:
+        if self._parity != UARTDevice.PARITY_NONE:
+            if self._parity == UARTDevice.PARITY_ZERO:
                 p = 0
-            elif self._parity == self.PARITY_EVEN:
+            elif self._parity == UARTDevice.PARITY_EVEN:
                 p = ones & 1
-            elif self._parity == self.PARITY_ODD:
+            elif self._parity == UARTDevice.PARITY_ODD:
                 p = (ones & 1) ^ 1
             frame |= (p << bit_pos)
             bit_pos += 1
@@ -635,7 +804,7 @@ class _UARTTransmitter:
         self._bits_remaining = bit_pos
 
     def _on_baud_clk_rising(self):
-        if self._bits_remaining == 0:
+        if not self.transmitting:
             return
 
         if self._shift & 1:
@@ -648,8 +817,7 @@ class _UARTTransmitter:
 
         if self._bits_remaining == 0:
             self._txd_out.set_high()
-            if self.on_complete:
-                self.on_complete()
+            self.on_complete()
 
 
 class UARTDevice(BaseDevice):
@@ -661,6 +829,12 @@ class UARTDevice(BaseDevice):
         2: ASIS0     (FFA1) - status (read-only)
         3: BRGC0     (FFA2) - baud rate generator control
     """
+
+    # parity modes (PS01:PS00 from ASIM0)
+    PARITY_NONE = 0
+    PARITY_ZERO = 1
+    PARITY_ODD = 2
+    PARITY_EVEN = 3
 
     # register offsets
     TXS0_RXB0 = 0
@@ -680,9 +854,14 @@ class UARTDevice(BaseDevice):
         # electrical interface
         self.txd_out = LogicOutput(Level.HIGH)
         self.rxd_in = LogicInput(pull_level=Level.HIGH)
+        self.tx_enabled_out = LogicOutput(Level.LOW)
 
         # transmitter
         self._tx = _UARTTransmitter(self.txd_out, self._on_tx_complete)
+
+        # receiver
+        self._rx = _UARTReceiver(self.rxd_in, self._on_rx_complete, self._on_rx_error)
+        self.rxd_in.on_falling = self._rx._on_rxd_falling
 
         self.reset()
 
@@ -691,12 +870,18 @@ class UARTDevice(BaseDevice):
         self._asim0 = 0x00
         self._asis0 = 0x00
         self._rxb0 = 0xFF
+        self._rxb0_read = True
+        self.tx_enabled_out.set_low()
         self._tx.reset()
+        self._rx.reset()
 
     def read(self, register):
         self._check_bounds(register)
 
         if register == self.TXS0_RXB0:
+            # uPD78F0833Y subseries manual: reading RXB0 clears ASIS0
+            self._rxb0_read = True
+            self._asis0 = 0x00
             return self._rxb0
 
         elif register == self.ASIM0:
@@ -716,6 +901,7 @@ class UARTDevice(BaseDevice):
             tps = (value >> 4) & 0x07
             mdl = value & 0x0F
             self._tx.configure_brg(tps, mdl)
+            self._rx.configure_brg(tps, mdl)
 
         elif register == self.ASIM0:
             self._asim0 = value
@@ -725,17 +911,52 @@ class UARTDevice(BaseDevice):
             data_bits = 7 + cl0   # CL0: 0=7 bits, 1=8 bits
             stop_bits = 1 + sl0   # SL0: 0=1 stop, 1=2 stop
             self._tx.configure_frame(data_bits, ps, stop_bits)
-            if value & 0x80:
+            self._rx.configure_frame(data_bits, ps, stop_bits)
+            if value & 0x80:  # TXE0
                 self._tx.enable()
+                self.tx_enabled_out.set_high()
             else:
                 self._tx.disable()
+                self.tx_enabled_out.set_low()
+            if value & 0x40:  # RXE0
+                self._rx.enable()
+            else:
+                self._rx.disable()
 
         elif register == self.TXS0_RXB0:
             if self._asim0 & 0x80:
                 self._tx.transmit(value)
 
     def tick(self, cycles):
-        self._tx.tick(cycles)
+        # TX and RX must be interleaved, not batched.
+        for _ in range(cycles):
+            self._tx.tick(1)
+            self._rx.tick(1)
 
     def _on_tx_complete(self):
         self.bus.interrupt(self, self.INT_TX)
+
+    def _on_rx_complete(self, data):
+        # uPD78F0833Y subseries manual: ASIS0 is cleared when the next data is received
+        self._asis0 = 0x00
+        if not self._rxb0_read:
+            self._asis0 |= 0x01  # OVE0
+        self._rxb0 = data
+        self._rxb0_read = False
+        self.bus.interrupt(self, self.INT_RX)
+
+    def _on_rx_error(self, error):
+        # uPD78F0833Y subseries manual: ASIS0 is cleared when the next data is received
+        self._asis0 = 0x00
+        if not self._rxb0_read:
+            self._asis0 |= 0x01  # OVE0
+        self._rxb0 = error.data
+        self._rxb0_read = False
+        if error.framing_error:
+            self._asis0 |= 0x02  # FE0
+        if error.parity_error:
+            self._asis0 |= 0x04  # PE0
+        self.bus.interrupt(self, self.INT_ERR)
+        # ISRM0=0: also issue receive completion interrupt on error
+        if not (self._asim0 & 0x02):
+            self.bus.interrupt(self, self.INT_RX)

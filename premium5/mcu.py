@@ -50,10 +50,14 @@ class UPD78F0831Y:
         self.p8 = None
         self.p9 = None
 
-        # Multiplexed pins: CSI30 muxed with GPIO      
-        self.p31_so30 = None   # P3.1/SO30 output (CSI30/P3 muxed)
+        # Multiplexed pins: CSI30 muxed with GPIO
+        self.p31_so30 = None   # P3.1/SO30 output  (CSI30/P3 muxed)
         self.p32_sck30 = None  # P3.2/SCK30 output (CSI30/P3 muxed)
-        self.p30_si30 = None   # P3.0/SI30 input
+        self.p30_si30 = None   # P3.0/SI30 input   (CSI30/P3 muxed)
+
+        # Multiplexed pins: UART0 muxed with GPIO
+        self.p25_txd0 = None   # P2.5/TxD0 output (UART0/P2 muxed)
+        self.p24_rxd0 = None   # P2.4/RxD0 input  (UART0/P2 muxed)
 
     def _init_memories(self):
         bus = self.proc.bus
@@ -161,6 +165,25 @@ class UPD78F0831Y:
                        (0xFF18, 0xFF18),    # TXS0/RXB0
                        (0xFFA0, 0xFFA1),    # ASIM0, ASIS0
                        (0xFFA2, 0xFFA2))    # BRGC0
+
+        self._intc.connect(self._uart0, self._uart0.INT_TX, self._intc.INTST0)
+        self._intc.connect(self._uart0, self._uart0.INT_RX, self._intc.INTSR0)
+        self._intc.connect(self._uart0, self._uart0.INT_ERR, self._intc.INTSER0)
+
+        # P2.5/TxD0: mux between GPIO and UART data out
+        self._txd0_mux = InputMux()
+        self.p2.pins[5].output.bind(self._txd0_mux.input_a)
+        self._uart0.txd_out.bind(self._txd0_mux.input_b)
+        self._uart0.tx_enabled_out.bind(self._txd0_mux.select)
+        self.p25_txd0 = self._txd0_mux.output
+
+        # P2.4/RxD0: fanout to both GPIO and UART
+        self.p24_rxd0 = LogicInput()
+        self._rxd0_fanout = LogicOutput()
+        self._rxd0_fanout.bind(self.p2.pins[4].input)
+        self._rxd0_fanout.bind(self._uart0.rxd_in)
+        self.p24_rxd0.on_rising = self._rxd0_fanout.set_high
+        self.p24_rxd0.on_falling = self._rxd0_fanout.set_low
 
     def _init_i2c(self):
         bus = self.proc.bus
