@@ -545,3 +545,153 @@ class BaudRateGeneratorDevice(BaseDevice):
 
             self._cycles_until_toggle = self._cycles_per_toggle
             self.baud_clk_out.toggle()
+
+
+class _UARTTransmitter:
+    """UART transmit shift register.
+
+    Given a data byte and frame config, builds the serial frame
+    (start + data + parity + stop) and shifts it out one bit per
+    baud clock rising edge on txd_out.
+    """
+
+    def __init__(self, txd_out):
+        self._txd_out = txd_out
+        self._shift = 0
+        self._bits_remaining = 0
+        self.on_complete = None
+
+    def reset(self):
+        self._shift = 0
+        self._bits_remaining = 0
+        self._txd_out.set_high()
+
+    @property
+    def busy(self):
+        return self._bits_remaining > 0
+
+    def send(self, data, data_bits=8, stop_bits=1):
+        # Assemble frame LSB first: start(0) + data + stop(1s)
+        frame = 0
+        bit_pos = 0
+
+        # start bit
+        bit_pos += 1  # bit 0 is already 0
+
+        # data bits (LSB first)
+        for i in range(data_bits):
+            frame |= (((data >> i) & 1) << bit_pos)
+            bit_pos += 1
+
+        # TODO: parity bit
+
+        # stop bit(s)
+        for _ in range(stop_bits):
+            frame |= (1 << bit_pos)
+            bit_pos += 1
+
+        self._shift = frame
+        self._bits_remaining = bit_pos
+
+    def on_baud_clk(self):
+        if self._bits_remaining == 0:
+            return
+
+        if self._shift & 1:
+            self._txd_out.set_high()
+        else:
+            self._txd_out.set_low()
+        self._shift >>= 1
+        self._bits_remaining -= 1
+
+        if self._bits_remaining == 0:
+            self._txd_out.set_high()
+            if self.on_complete:
+                self.on_complete()
+
+
+class UARTDevice(BaseDevice):
+    """Asynchronous serial interface UART0.
+
+    Full-duplex UART with separate transmit and receive paths.
+    Clocked by an external BaudRateGeneratorDevice connected via
+    baud_clk_in.  The UART shifts one bit on each rising edge
+    of the baud clock.
+
+    Registers (split address space):
+        0: TXS0/RXB0 (FF18) - write=transmit, read=receive buffer
+        1: ASIM0     (FFA0) - mode control
+        2: ASIS0     (FFA1) - status (read-only)
+    """
+
+    # register offsets
+    TXS0_RXB0 = 0
+    ASIM0 = 1
+    ASIS0 = 2
+
+    # interrupt sources
+    INT_TX = 0   # INTST0:  transmit complete
+    INT_RX = 1   # INTSR0:  receive complete
+    INT_ERR = 2  # INTSER0: receive error
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.size = 3
+
+        # electrical interface
+        self.brg_enable_out = LogicOutput(Level.LOW)
+        self.brg_clk_in = LogicInput(pull_level=Level.LOW)
+        self.txd_out = LogicOutput(Level.HIGH)
+        self.rxd_in = LogicInput(pull_level=Level.HIGH)
+
+        # transmitter
+        self._tx = _UARTTransmitter(self.txd_out)
+        self._tx.on_complete = self._on_tx_complete
+
+        # baud clock callback
+        self.brg_clk_in.on_rising = self._on_baud_clk
+
+        self.reset()
+
+    def reset(self):
+        self._asim0 = 0x00
+        self._asis0 = 0x00
+        self._rxb0 = 0xFF
+        self._tx.reset()
+        self.brg_enable_out.set_low()
+
+    def read(self, register):
+        self._check_bounds(register)
+
+        if register == self.TXS0_RXB0:
+            return self._rxb0
+
+        elif register == self.ASIM0:
+            return self._asim0
+
+        elif register == self.ASIS0:
+            return self._asis0
+
+    def write(self, register, value):
+        self._check_bounds(register)
+
+        if register == self.ASIM0:
+            self._asim0 = value
+            if value & 0xC0:
+                self.brg_enable_out.set_high()
+            else:
+                self.brg_enable_out.set_low()
+
+        elif register == self.TXS0_RXB0:
+            if self._asim0 & 0x80:
+                cl0 = (self._asim0 >> 3) & 1
+                sl0 = (self._asim0 >> 2) & 1
+                data_bits = 7 + cl0  # CL0: 0=7 bits, 1=8 bits
+                stop_bits = 1 + sl0  # SL0: 0=1 stop, 1=2 stop
+                self._tx.send(value, data_bits, stop_bits)
+
+    def _on_baud_clk(self):
+        self._tx.on_baud_clk()
+
+    def _on_tx_complete(self):
+        self.bus.interrupt(self, self.INT_TX)

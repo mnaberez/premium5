@@ -1,5 +1,5 @@
 import unittest
-from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, BaudRateGeneratorDevice
+from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, BaudRateGeneratorDevice, UARTDevice
 
 
 class Port0DeviceTests(unittest.TestCase):
@@ -458,3 +458,125 @@ class BaudRateGeneratorDeviceTests(unittest.TestCase):
             last = brg.baud_clk_out.high
 
         self.assertEqual(rising_edges, 10)
+
+
+class UARTDeviceTests(unittest.TestCase):
+    """Tests for UART0 transmit path.
+
+    The UART is clocked by a BaudRateGeneratorDevice.  We wire them
+    together here and tick the BRG to drive the UART.  At BRGC0=0x39
+    (10400 baud at 4.19 MHz), one bit = 400 CPU cycles.
+    """
+
+    def _make_uart(self):
+        self.brg = BaudRateGeneratorDevice("brg0")
+        self.uart = UARTDevice("uart0")
+        self.uart.bus = self
+        self.interrupts = []
+
+        # wire BRG clock to UART
+        self.brg.baud_clk_out.bind(self.uart.brg_clk_in)
+
+        # wire UART enable to BRG
+        self.uart.brg_enable_out.bind(self.brg.enable_in)
+
+        # configure BRG for 10400 baud
+        self.brg.write(self.brg.BRGC0, 0x39)
+
+        return self.uart
+
+    def interrupt(self, device, int_num):
+        self.interrupts.append((device, int_num))
+
+    def _tick_one_bit(self):
+        """Tick one full bit period (400 cycles at 10400 baud)."""
+        self.brg.tick(400)
+
+    def _capture_tx_bits(self, n):
+        """Capture n bits from TxD0, one per bit period."""
+        bits = []
+        for _ in range(n):
+            self._tick_one_bit()
+            bits.append(int(self.uart.txd_out.high))
+        return bits
+
+    # initial state
+
+    def test_ctor_txd_idles_high(self):
+        uart = self._make_uart()
+        self.assertTrue(uart.txd_out.high)
+
+    def test_ctor_brg_disabled(self):
+        uart = self._make_uart()
+        self.assertTrue(uart.brg_enable_out.low)
+
+    # enable
+
+    def test_asim0_txe_enables_brg(self):
+        uart = self._make_uart()
+        uart.write(uart.ASIM0, 0xCA)  # TXE0=1, RXE0=1, 8N1
+        self.assertTrue(uart.brg_enable_out.high)
+
+    def test_asim0_clear_disables_brg(self):
+        uart = self._make_uart()
+        uart.write(uart.ASIM0, 0xCA)
+        uart.write(uart.ASIM0, 0x00)
+        self.assertTrue(uart.brg_enable_out.low)
+
+    # transmit: 8N1 frame (0xCA = TX+RX enabled, no parity, 8 bits, 1 stop)
+
+    def test_tx_8n1_frame(self):
+        uart = self._make_uart()
+        uart.write(uart.ASIM0, 0xCA)  # TX+RX, 8N1
+
+        # transmit 0x55 (01010101)
+        uart.write(uart.TXS0_RXB0, 0x55)
+
+        # capture 10 bits: start(1) + data(8) + stop(1)
+        bits = self._capture_tx_bits(10)
+
+        # start bit = 0
+        self.assertEqual(bits[0], 0)
+
+        # data bits LSB first: 0x55 = 10101010 LSB first
+        self.assertEqual(bits[1:9], [1, 0, 1, 0, 1, 0, 1, 0])
+
+        # stop bit = 1
+        self.assertEqual(bits[9], 1)
+
+    def test_tx_fires_interrupt(self):
+        uart = self._make_uart()
+        uart.write(uart.ASIM0, 0xCA)
+        uart.write(uart.TXS0_RXB0, 0x55)
+
+        for _ in range(10):
+            self._tick_one_bit()
+
+        self.assertEqual(len(self.interrupts), 1)
+        self.assertIs(self.interrupts[0][0], uart)
+        self.assertEqual(self.interrupts[0][1], uart.INT_TX)
+
+    def test_tx_returns_to_idle_after_frame(self):
+        uart = self._make_uart()
+        uart.write(uart.ASIM0, 0xCA)
+        uart.write(uart.TXS0_RXB0, 0x55)
+
+        for _ in range(10):
+            self._tick_one_bit()
+
+        # TxD should be high (idle/mark)
+        self.assertTrue(uart.txd_out.high)
+
+        # further ticking should not fire more interrupts
+        for _ in range(10):
+            self._tick_one_bit()
+        self.assertEqual(len(self.interrupts), 1)
+
+    def test_tx_disabled_does_not_send(self):
+        uart = self._make_uart()
+        # don't enable TX
+        uart.write(uart.TXS0_RXB0, 0x55)
+
+        self.brg.tick(4000)
+        self.assertTrue(uart.txd_out.high)
+        self.assertEqual(self.interrupts, [])
