@@ -69,6 +69,21 @@ class LogicOutputTests(unittest.TestCase):
         out.set_level(Level.FLOATING)
         self.assertTrue(out.floating)
 
+    def test_toggle_from_low(self):
+        out = LogicOutput(Level.LOW)
+        out.toggle()
+        self.assertTrue(out.high)
+
+    def test_toggle_from_high(self):
+        out = LogicOutput(Level.HIGH)
+        out.toggle()
+        self.assertTrue(out.low)
+
+    def test_toggle_from_floating_stays_floating(self):
+        out = LogicOutput(Level.FLOATING)
+        out.toggle()
+        self.assertTrue(out.floating)
+
     def test_set_level_pushes_to_bound_input(self):
         out = LogicOutput()
         inp = LogicInput()

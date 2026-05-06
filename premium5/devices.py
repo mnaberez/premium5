@@ -458,3 +458,90 @@ class SPIControllerDevice(BaseDevice):
 
             # bit has been shifted; reload to wait for the next bit
             self._cycles_until_sck_edge = self._cycles_per_sck_edge
+
+
+class BaudRateGeneratorDevice(BaseDevice):
+    """UART0 baud rate generator (BRGC0).
+
+    Produces a clock signal on baud_clk_out that toggles at the configured
+    baud rate.  The UART listens to this clock to time its bit shifting.
+
+    Register:
+        0: BRGC0 - baud rate generator control
+
+    Baud rate = fX / (2^(TPS+1) * (16 + MDL))
+    where TPS = bits 6:4, MDL = bits 3:0.
+    """
+
+    BRGC0 = 0
+
+    def __init__(self, name):
+        super().__init__(name)
+
+        # register sizes
+        self.size = 1
+
+        # electrical interface
+        self.enable_in = LogicInput(pull_level=Level.LOW)
+        self.baud_clk_out = LogicOutput(Level.LOW)
+
+        # internal callbacks
+        self.enable_in.on_rising = self._on_enable
+        self.enable_in.on_falling = self._on_disable
+
+        self.reset()
+
+    def reset(self):
+        self._brgc0 = 0x00
+        self._invalid = True
+        self._cycles_per_toggle = 0    # total
+        self._cycles_until_toggle = 0  # remaining
+        self.baud_clk_out.set_low()
+
+    def read(self, register):
+        self._check_bounds(register)
+        return self._brgc0
+
+    def write(self, register, value):
+        self._check_bounds(register)
+        self._brgc0 = value
+
+        tps = (self._brgc0 >> 4) & 0x07
+        mdl = self._brgc0 & 0x0F
+
+        # The baud rate generator output is a square wave.  One full
+        # cycle (rising edge to rising edge) = one bit period.  The
+        # UART shifts one bit on each rising edge.
+        #
+        # cycles_per_bit = 2^(TPS+1) * (16 + MDL)
+        #
+        # Example: BRGC0=0x39 at fX=4.19 MHz
+        #   TPS=3, MDL=9
+        #   cycles_per_bit = 2^4 * 25 = 400
+        #   baud = 4,190,000 / 400 = 10,475 (~10400 baud)
+        #   toggle every 200 cycles, rising edge every 400 cycles
+        #
+        cycles_per_bit = (1 << (tps + 1)) * (16 + mdl)
+        self._cycles_per_toggle = cycles_per_bit // 2
+
+        # TPS=0 is external clock (XXX not supported), MDL=15 is prohibited
+        self._invalid = (tps == 0) or (mdl == 0x0F)
+
+    def _on_enable(self):
+        self.baud_clk_out.set_low()
+        self._cycles_until_toggle = self._cycles_per_toggle
+
+    def _on_disable(self):
+        self.baud_clk_out.set_low()
+
+    def tick(self, cycles):
+        if self.enable_in.low or self._invalid:
+            return
+
+        for _ in range(cycles):
+            self._cycles_until_toggle -= 1
+            if self._cycles_until_toggle > 0:
+                continue
+
+            self._cycles_until_toggle = self._cycles_per_toggle
+            self.baud_clk_out.toggle()

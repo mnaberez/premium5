@@ -1,5 +1,5 @@
 import unittest
-from premium5.devices import Port0Device, Port9Device, SPIControllerDevice
+from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, BaudRateGeneratorDevice
 
 
 class Port0DeviceTests(unittest.TestCase):
@@ -277,3 +277,184 @@ class SPIControllerDeviceTests(unittest.TestCase):
         self.assertEqual(self.interrupts, [])
         spi.tick(1)
         self.assertEqual(len(self.interrupts), 1)
+
+
+class BaudRateGeneratorDeviceTests(unittest.TestCase):
+
+    def _make_brg(self):
+        from premium5.digital import LogicOutput, Level
+        brg = BaudRateGeneratorDevice("brg0")
+        self._enable_driver = LogicOutput(Level.LOW)
+        self._enable_driver.bind(brg.enable_in)
+        return brg
+
+    def _enable(self):
+        self._enable_driver.set_high()
+
+    def _disable(self):
+        self._enable_driver.set_low()
+
+    # initial state
+
+    def test_ctor_does_not_run(self):
+        brg = self._make_brg()
+        self.assertTrue(brg.enable_in.low)
+        self.assertTrue(brg.baud_clk_out.low)
+        brg.tick(1000)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    # reset
+
+    def test_reset_clears_register(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+        brg.reset()
+        self.assertEqual(brg.read(brg.BRGC0), 0x00)
+
+    def test_reset_stops_clock(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+
+        self._enable()
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+
+        brg.reset()
+        self.assertTrue(brg.baud_clk_out.low)
+        brg.tick(1000)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    # brgc0 register read/write
+
+    def test_brgc0_read_returns_written_value(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+        self.assertEqual(brg.read(brg.BRGC0), 0x39)
+
+    def test_brgc0_write_tps_zero_does_not_run(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x09)  # TPS=000 (unsupported), MDL=1001
+
+        self._enable()
+        brg.tick(999)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    def test_brgc0_write_mdl_fifteen_does_not_run(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x3F)  # TPS=011, MDL=1111 (prohibited)
+
+        self._enable()
+        brg.tick(999)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    # enable input
+
+    def test_enable_rising_starts_clock(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+
+        self._enable()
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    def test_enable_falling_stops_clock(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+
+        self._enable()
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+
+        self._disable()
+        self.assertTrue(brg.baud_clk_out.low)
+        brg.tick(1000)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    def test_enable_rising_after_stop_resumes(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+
+        self._enable()
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+
+        self._disable()
+        self.assertTrue(brg.baud_clk_out.low)
+
+        self._enable()
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.low)
+
+    # Clock generation at 10400 baud (BRGC0=0x39)
+    #
+    # The BRG is ticked once per CPU cycle.  At 4.19 MHz, BRGC0=0x39 produces
+    # 10400 baud.  The formula is:  baud = fX / (2^(TPS+1) * (16 + MDL))
+    #
+    #   0x39 = TPS=011 (n=3), MDL=1001 (k=9)
+    #   cycles_per_bit = 2^(3+1) * (16+9) = 16 * 25 = 400
+    #   baud = 4,190,000 / 400 = 10,475 (≈10400)
+    #
+    # The clock is a square wave at the baud rate.  One full cycle
+    # (rising edge to rising edge) = one bit period = 400 cycles.
+    # The clock toggles every 200 cycles.  The UART shifts one bit
+    # on each rising edge.
+
+    def test_10400_baud_toggle_timing(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+        self._enable()
+
+        # should not toggle before 200 ticks
+        brg.tick(199)
+        self.assertTrue(brg.baud_clk_out.low)
+
+        # tick 200: rising edge (start of bit)
+        brg.tick(1)
+        self.assertTrue(brg.baud_clk_out.high)
+
+        # tick 400: falling edge
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.low)
+
+        # tick 600: rising edge (start of next bit)
+        brg.tick(200)
+        self.assertTrue(brg.baud_clk_out.high)
+
+    def test_10400_baud_10_bits_in_4000_cycles(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x39)
+        self._enable()
+
+        rising_edges = 0
+        last = brg.baud_clk_out.high
+        for _ in range(4000):
+            brg.tick(1)
+            if brg.baud_clk_out.high and not last:
+                rising_edges += 1
+            last = brg.baud_clk_out.high
+
+        self.assertEqual(rising_edges, 10)
+
+    # Verify the formula works at a second baud rate: 9600 (BRGC0=0x3B)
+    #   0x3B = TPS=011 (n=3), MDL=1011 (k=11)
+    #   cycles_per_bit = 2^4 * 27 = 432
+    #   baud = 4,190,000 / 432 = 9699 (≈9600)
+
+    def test_9600_baud_10_bits_in_4320_cycles(self):
+        brg = self._make_brg()
+        brg.write(brg.BRGC0, 0x3B)
+        self._enable()
+
+        rising_edges = 0
+        last = brg.baud_clk_out.high
+        for _ in range(4320):
+            brg.tick(1)
+            if brg.baud_clk_out.high and not last:
+                rising_edges += 1
+            last = brg.baud_clk_out.high
+
+        self.assertEqual(rising_edges, 10)

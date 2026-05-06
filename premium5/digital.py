@@ -35,6 +35,12 @@ class LogicOutput(object):
     def set_floating(self):
         self.set_level(Level.FLOATING)
 
+    def toggle(self):
+        if self._level == Level.HIGH:
+            self.set_low()
+        elif self._level == Level.LOW:
+            self.set_high()
+
     # interrogate the level
 
     @property

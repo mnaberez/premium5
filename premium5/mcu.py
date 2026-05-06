@@ -8,7 +8,7 @@ from k0emu.processor import Processor
 from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
                               Port7Device, Port8Device, Port9Device)
-from premium5.devices import SPIControllerDevice
+from premium5.devices import SPIControllerDevice, BaudRateGeneratorDevice
 from premium5.digital import InputMux, LogicInput, LogicOutput
 
 
@@ -29,6 +29,7 @@ class UPD78F0831Y:
         self._init_interrupts()
         self._init_csi30()
         self._init_csi31()
+        self._init_uart0()
         self._init_i2c()
         self._init_timers()
 
@@ -151,6 +152,12 @@ class UPD78F0831Y:
         # TODO: CSI31 (CDC) not mapped — no CD changer connected.
         # FF1B and FFB8 are unmapped; firmware writes are ignored.
         pass
+
+    def _init_uart0(self):
+        bus = self.proc.bus
+
+        self._brg0 = BaudRateGeneratorDevice("brg0")
+        bus.add_device(self._brg0, (0xFFA2, 0xFFA2))
 
     def _init_i2c(self):
         bus = self.proc.bus
