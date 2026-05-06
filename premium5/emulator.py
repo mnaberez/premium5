@@ -56,6 +56,9 @@ class Emulator:
         self._power_key = LogicOutput(Level.HIGH)
         self._power_key.bind(mcu.p0.pins[4].input)
 
+        self._stop_eject_key = LogicOutput(Level.HIGH)
+        self._stop_eject_key.bind(mcu.p0.pins[6].input)
+
         self._p02_driver = LogicOutput(Level.HIGH)
         self._p02_driver.bind(mcu.p0.pins[2].input)
 
@@ -191,6 +194,10 @@ class Emulator:
             self._power_key.set_high()   # release (ensures edge on re-press)
             self._p02_driver.set_low()   # P0.2 low (wake)
             self._power_key.set_low()    # P0.4 low (key pressed)
+
+        elif action == 'stop_eject_key':
+            self._stop_eject_key.set_high()  # release (ensures edge on re-press)
+            self._stop_eject_key.set_low()   # P0.6 low (key pressed)
 
         elif action == 'key_down':
             self.upd.key_data[cmd['byte']] |= cmd['mask']

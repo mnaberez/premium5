@@ -8,7 +8,7 @@ from k0emu.processor import Processor
 from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
                               Port7Device, Port8Device, Port9Device)
-from premium5.devices import SPIControllerDevice, BaudRateGeneratorDevice
+from premium5.devices import SPIControllerDevice, UARTDevice
 from premium5.digital import InputMux, LogicInput, LogicOutput
 
 
@@ -156,8 +156,11 @@ class UPD78F0831Y:
     def _init_uart0(self):
         bus = self.proc.bus
 
-        self._brg0 = BaudRateGeneratorDevice("brg0")
-        bus.add_device(self._brg0, (0xFFA2, 0xFFA2))
+        self._uart0 = UARTDevice("uart0")
+        bus.add_device(self._uart0,
+                       (0xFF18, 0xFF18),    # TXS0/RXB0
+                       (0xFFA0, 0xFFA1),    # ASIM0, ASIS0
+                       (0xFFA2, 0xFFA2))    # BRGC0
 
     def _init_i2c(self):
         bus = self.proc.bus

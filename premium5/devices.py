@@ -460,82 +460,64 @@ class SPIControllerDevice(BaseDevice):
             self._cycles_until_sck_edge = self._cycles_per_sck_edge
 
 
-class BaudRateGeneratorDevice(BaseDevice):
-    """UART0 baud rate generator (BRGC0).
+class _UARTBaudRateGenerator:
+    """Baud rate clock generator.
 
-    Produces a clock signal on baud_clk_out that toggles at the configured
-    baud rate.  The UART listens to this clock to time its bit shifting.
+    Produces a square wave on baud_clk_out at a configured rate.
+    One full cycle (rising edge to rising edge) = one bit period.
+    The UART shifts one bit on each rising edge.  The clock output
+    is low on reset or after being stopped.  After being started,
+    the clock goes high after one half bit period.
 
-    Register:
-        0: BRGC0 - baud rate generator control
-
-    Baud rate = fX / (2^(TPS+1) * (16 + MDL))
-    where TPS = bits 6:4, MDL = bits 3:0.
+    This BRG is not accessible from the bus; it's an internal object,
+    not a bus device.  The UART's transmitter and receiver both own 
+    their own BRG instance and pass the config (BRGC0) down into them.
+    Having them separate allows the receiver to start/stop its BRG
+    whenever it likes, which allows it to synchronize to the start bit
+    and land exactly in the middle of each bit to receive.
     """
 
-    BRGC0 = 0
-
-    def __init__(self, name):
-        super().__init__(name)
-
-        # register sizes
-        self.size = 1
-
-        # electrical interface
-        self.enable_in = LogicInput(pull_level=Level.LOW)
+    def __init__(self):
         self.baud_clk_out = LogicOutput(Level.LOW)
-
-        # internal callbacks
-        self.enable_in.on_rising = self._on_enable
-        self.enable_in.on_falling = self._on_disable
-
-        self.reset()
+        self._invalid = True
+        self._cycles_per_toggle = 0
+        self._cycles_until_toggle = 0
+        self._enabled = False
 
     def reset(self):
-        self._brgc0 = 0x00
         self._invalid = True
-        self._cycles_per_toggle = 0    # total
-        self._cycles_until_toggle = 0  # remaining
+        self._cycles_per_toggle = 0
+        self._cycles_until_toggle = 0
+        self._enabled = False
         self.baud_clk_out.set_low()
 
-    def read(self, register):
-        self._check_bounds(register)
-        return self._brgc0
+    def configure(self, tps, mdl):
+        """Configure the baud rate.
 
-    def write(self, register, value):
-        self._check_bounds(register)
-        self._brgc0 = value
+        cycles_per_bit = 2^(TPS+1) * (16 + MDL)
 
-        tps = (self._brgc0 >> 4) & 0x07
-        mdl = self._brgc0 & 0x0F
-
-        # The baud rate generator output is a square wave.  One full
-        # cycle (rising edge to rising edge) = one bit period.  The
-        # UART shifts one bit on each rising edge.
-        #
-        # cycles_per_bit = 2^(TPS+1) * (16 + MDL)
-        #
-        # Example: BRGC0=0x39 at fX=4.19 MHz
-        #   TPS=3, MDL=9
-        #   cycles_per_bit = 2^4 * 25 = 400
-        #   baud = 4,190,000 / 400 = 10,475 (~10400 baud)
-        #   toggle every 200 cycles, rising edge every 400 cycles
-        #
-        cycles_per_bit = (1 << (tps + 1)) * (16 + mdl)
-        self._cycles_per_toggle = cycles_per_bit // 2
-
+        Example: TPS=3, MDL=9 at fX=4.19 MHz
+          cycles_per_bit = 2^4 * 25 = 400
+          baud = 4,190,000 / 400 = 10,475 (~10400 baud)
+          toggle every 200 cycles, rising edge every 400 cycles
+        """
         # TPS=0 is external clock (XXX not supported), MDL=15 is prohibited
         self._invalid = (tps == 0) or (mdl == 0x0F)
 
-    def _on_enable(self):
+        cycles_per_bit = (1 << (tps + 1)) * (16 + mdl)
+        self._cycles_per_toggle = cycles_per_bit // 2
+
+    def enable(self):
+        self._enabled = True
         self.baud_clk_out.set_low()
         self._cycles_until_toggle = self._cycles_per_toggle
 
-    def _on_disable(self):
+    def disable(self):
+        self._enabled = False
         self.baud_clk_out.set_low()
 
     def tick(self, cycles):
-        if self.enable_in.low or self._invalid:
+        if (not self._enabled) or self._invalid:
             return
 
         for _ in range(cycles):
@@ -550,28 +532,75 @@ class BaudRateGeneratorDevice(BaseDevice):
 class _UARTTransmitter:
     """UART transmit shift register.
 
-    Given a data byte and frame config, builds the serial frame
-    (start + data + parity + stop) and shifts it out one bit per
-    baud clock rising edge on txd_out.
+    Builds the serial frame (start + data + parity + stop) and 
+    shifts it out one bit per baud clock rising edge on its
+    BRG's clock output.
     """
 
-    def __init__(self, txd_out):
+    # parity modes (PS01:PS00 from ASIM0)
+    PARITY_NONE = 0
+    PARITY_ZERO = 1
+    PARITY_ODD = 2
+    PARITY_EVEN = 3
+
+    def __init__(self, txd_out, on_complete):
         self._txd_out = txd_out
-        self._shift = 0
-        self._bits_remaining = 0
-        self.on_complete = None
+        self.on_complete = on_complete
+
+        self._brg = _UARTBaudRateGenerator()
+        self._brg_clk_in = LogicInput()
+        self._brg.baud_clk_out.bind(self._brg_clk_in)
+        self._brg_clk_in.on_rising = self._on_baud_clk_rising
+
+        self.reset()
 
     def reset(self):
+        self._data_bits = 8
+        self._parity = self.PARITY_NONE
+        self._stop_bits = 1
+
         self._shift = 0
         self._bits_remaining = 0
+
         self._txd_out.set_high()
+        self._brg.reset()
+
+    def configure_brg(self, tps, mdl):
+        self._brg.configure(tps, mdl)
+
+    def configure_frame(self, data_bits, parity, stop_bits):
+        self._data_bits = data_bits
+        self._parity = parity
+        self._stop_bits = stop_bits
+
+    def enable(self):
+        self._brg.enable()
+
+    def disable(self):
+        if self.busy:
+            # The uPD78F0833Y subseries manual says not to disable the UART
+            # mid-transmission but doesn't say what happens if you do.  We've
+            # chosen to shut down cleanly on disable.
+            self._shift = 0
+            self._bits_remaining = 0
+            self._txd_out.set_high()
+        self._brg.disable()
+
+    def tick(self, cycles):
+        self._brg.tick(cycles)
 
     @property
     def busy(self):
         return self._bits_remaining > 0
 
-    def send(self, data, data_bits=8, stop_bits=1):
-        # Assemble frame LSB first: start(0) + data + stop(1s)
+    def transmit(self, data):
+        if self.busy:
+            # The uPD78F0833Y subseries manual says not to write to the TX
+            # register while a TX is already in process but doesn't say what
+            # happens if you do.  We've chosen to ignore second transmission.
+            return
+
+        # Assemble frame LSB first: start + data + parity + stops
         frame = 0
         bit_pos = 0
 
@@ -579,21 +608,33 @@ class _UARTTransmitter:
         bit_pos += 1  # bit 0 is already 0
 
         # data bits (LSB first)
-        for i in range(data_bits):
-            frame |= (((data >> i) & 1) << bit_pos)
+        ones = 0
+        for i in range(self._data_bits):
+            bit = (data >> i) & 1
+            ones += bit
+            frame |= (bit << bit_pos)
             bit_pos += 1
 
-        # TODO: parity bit
+        # parity bit
+        if self._parity != self.PARITY_NONE:
+            if self._parity == self.PARITY_ZERO:
+                p = 0
+            elif self._parity == self.PARITY_EVEN:
+                p = ones & 1
+            elif self._parity == self.PARITY_ODD:
+                p = (ones & 1) ^ 1
+            frame |= (p << bit_pos)
+            bit_pos += 1
 
         # stop bit(s)
-        for _ in range(stop_bits):
+        for _ in range(self._stop_bits):
             frame |= (1 << bit_pos)
             bit_pos += 1
 
         self._shift = frame
         self._bits_remaining = bit_pos
 
-    def on_baud_clk(self):
+    def _on_baud_clk_rising(self):
         if self._bits_remaining == 0:
             return
 
@@ -601,6 +642,7 @@ class _UARTTransmitter:
             self._txd_out.set_high()
         else:
             self._txd_out.set_low()
+
         self._shift >>= 1
         self._bits_remaining -= 1
 
@@ -613,21 +655,18 @@ class _UARTTransmitter:
 class UARTDevice(BaseDevice):
     """Asynchronous serial interface UART0.
 
-    Full-duplex UART with separate transmit and receive paths.
-    Clocked by an external BaudRateGeneratorDevice connected via
-    baud_clk_in.  The UART shifts one bit on each rising edge
-    of the baud clock.
-
     Registers (split address space):
         0: TXS0/RXB0 (FF18) - write=transmit, read=receive buffer
         1: ASIM0     (FFA0) - mode control
         2: ASIS0     (FFA1) - status (read-only)
+        3: BRGC0     (FFA2) - baud rate generator control
     """
 
     # register offsets
     TXS0_RXB0 = 0
     ASIM0 = 1
     ASIS0 = 2
+    BRGC0 = 3
 
     # interrupt sources
     INT_TX = 0   # INTST0:  transmit complete
@@ -636,29 +675,23 @@ class UARTDevice(BaseDevice):
 
     def __init__(self, name):
         super().__init__(name)
-        self.size = 3
+        self.size = 4
 
         # electrical interface
-        self.brg_enable_out = LogicOutput(Level.LOW)
-        self.brg_clk_in = LogicInput(pull_level=Level.LOW)
         self.txd_out = LogicOutput(Level.HIGH)
         self.rxd_in = LogicInput(pull_level=Level.HIGH)
 
         # transmitter
-        self._tx = _UARTTransmitter(self.txd_out)
-        self._tx.on_complete = self._on_tx_complete
-
-        # baud clock callback
-        self.brg_clk_in.on_rising = self._on_baud_clk
+        self._tx = _UARTTransmitter(self.txd_out, self._on_tx_complete)
 
         self.reset()
 
     def reset(self):
+        self._brgc0 = 0x00
         self._asim0 = 0x00
         self._asis0 = 0x00
         self._rxb0 = 0xFF
         self._tx.reset()
-        self.brg_enable_out.set_low()
 
     def read(self, register):
         self._check_bounds(register)
@@ -672,26 +705,37 @@ class UARTDevice(BaseDevice):
         elif register == self.ASIS0:
             return self._asis0
 
+        elif register == self.BRGC0:
+            return self._brgc0
+
     def write(self, register, value):
         self._check_bounds(register)
 
-        if register == self.ASIM0:
+        if register == self.BRGC0:
+            self._brgc0 = value
+            tps = (value >> 4) & 0x07
+            mdl = value & 0x0F
+            self._tx.configure_brg(tps, mdl)
+
+        elif register == self.ASIM0:
             self._asim0 = value
-            if value & 0xC0:
-                self.brg_enable_out.set_high()
+            cl0 = (value >> 3) & 1
+            sl0 = (value >> 2) & 1
+            ps = (value >> 4) & 0x03
+            data_bits = 7 + cl0   # CL0: 0=7 bits, 1=8 bits
+            stop_bits = 1 + sl0   # SL0: 0=1 stop, 1=2 stop
+            self._tx.configure_frame(data_bits, ps, stop_bits)
+            if value & 0x80:
+                self._tx.enable()
             else:
-                self.brg_enable_out.set_low()
+                self._tx.disable()
 
         elif register == self.TXS0_RXB0:
             if self._asim0 & 0x80:
-                cl0 = (self._asim0 >> 3) & 1
-                sl0 = (self._asim0 >> 2) & 1
-                data_bits = 7 + cl0  # CL0: 0=7 bits, 1=8 bits
-                stop_bits = 1 + sl0  # SL0: 0=1 stop, 1=2 stop
-                self._tx.send(value, data_bits, stop_bits)
+                self._tx.transmit(value)
 
-    def _on_baud_clk(self):
-        self._tx.on_baud_clk()
+    def tick(self, cycles):
+        self._tx.tick(cycles)
 
     def _on_tx_complete(self):
         self.bus.interrupt(self, self.INT_TX)
