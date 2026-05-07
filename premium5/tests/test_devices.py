@@ -1,6 +1,7 @@
 import unittest
-from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, UARTDevice, _UARTBaudRateGenerator, _UARTReceiver
+from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, UARTDevice
 from premium5.digital import LogicInput, LogicOutput, Level
+from premium5.serial import AsyncSerialReceiver, BaudRateGenerator, Parity
 
 
 class Port0DeviceTests(unittest.TestCase):
@@ -254,35 +255,31 @@ class SPIControllerDeviceTests(unittest.TestCase):
 
 class UARTBaudRateGeneratorTests(unittest.TestCase):
 
-    def _make_brg(self):
-        return _UARTBaudRateGenerator()
+    def setUp(self):
+        self.brg = BaudRateGenerator()
 
     # initial state
 
     def test_ctor_clock_low(self):
-        brg = self._make_brg()
-        self.assertTrue(brg.baud_clk_out.low)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_ctor_not_running(self):
-        brg = self._make_brg()
-        brg.tick(999)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.tick(999)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
-    # configure
+    # enable with 0 cycles per bit is a no-op.  This is how the
+    # UART device handles invalid register configurations.
 
-    def test_tps_zero_does_not_run(self):
-        brg = self._make_brg()
-        brg.configure(0, 9)  # TPS=0 (unsupported)
-        brg.enable()
-        brg.tick(999)
-        self.assertTrue(brg.baud_clk_out.low)
+    def test_configure_zero_enable_does_not_run(self):
+        self.brg.configure(0)
+        self.brg.enable()
+        self.assertFalse(self.brg._enabled)
 
-    def test_mdl_fifteen_does_not_run(self):
-        brg = self._make_brg()
-        brg.configure(3, 15)  # MDL=15 (prohibited)
-        brg.enable()
-        brg.tick(999)
-        self.assertTrue(brg.baud_clk_out.low)
+    def test_configure_zero_enable_stays_low(self):
+        self.brg.configure(0)
+        self.brg.enable()
+        self.brg.tick(999)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     # enable's contract with the receiver and transmitter: its
     # output starts low for exactly one half bit period, then
@@ -290,79 +287,72 @@ class UARTBaudRateGeneratorTests(unittest.TestCase):
     # receiver depends on this to achieve mid-bit sampling.
 
     def test_enable_output_starts_low(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)  # 200 cycles per half bit
-        brg.enable()
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.configure(400)  # 400 cycles per bit
+        self.brg.enable()
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_enable_stays_low_for_half_bit_period(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)  # 200 cycles per half bit
-        brg.enable()
-        brg.tick(199)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.configure(400)  # 400 cycles per bit
+        self.brg.enable()
+        self.brg.tick(199)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_enable_first_rising_edge_at_half_bit_period(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)  # 200 cycles per half bit
-        brg.enable()
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.configure(400)  # 400 cycles per bit
+        self.brg.enable()
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
     # enable / disable
 
     def test_enable_starts_clock(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_disable_stops_clock(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
-        brg.disable()
-        self.assertTrue(brg.baud_clk_out.low)
-        brg.tick(999)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.disable()
+        self.assertTrue(self.brg.baud_clk_out.low)
+        self.brg.tick(999)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_re_enable_resumes(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
-        brg.disable()
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.disable()
+        self.assertTrue(self.brg.baud_clk_out.low)
 
-        brg.enable()
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.enable()
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     def test_reset_stops_clock(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
-        brg.reset()
-        self.assertTrue(brg.baud_clk_out.low)
-        brg.tick(999)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.reset()
+        self.assertTrue(self.brg.baud_clk_out.low)
+        self.brg.tick(999)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
     # Clock generation at 10400 baud (BRGC0=0x39)
     #
@@ -379,38 +369,36 @@ class UARTBaudRateGeneratorTests(unittest.TestCase):
     # on each rising edge.
 
     def test_10400_baud_toggle_timing(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
         # should not toggle before 200 ticks
-        brg.tick(199)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.tick(199)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
         # tick 200: rising edge (start of bit)
-        brg.tick(1)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.tick(1)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
         # tick 400: falling edge
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.low)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.low)
 
         # tick 600: rising edge (start of next bit)
-        brg.tick(200)
-        self.assertTrue(brg.baud_clk_out.high)
+        self.brg.tick(200)
+        self.assertTrue(self.brg.baud_clk_out.high)
 
     def test_10400_baud_10_bits_in_4000_cycles(self):
-        brg = self._make_brg()
-        brg.configure(3, 9)
-        brg.enable()
+        self.brg.configure(400)
+        self.brg.enable()
 
         rising_edges = 0
-        last = brg.baud_clk_out.high
+        last = self.brg.baud_clk_out.high
         for _ in range(4000):
-            brg.tick(1)
-            if brg.baud_clk_out.high and not last:
+            self.brg.tick(1)
+            if self.brg.baud_clk_out.high and not last:
                 rising_edges += 1
-            last = brg.baud_clk_out.high
+            last = self.brg.baud_clk_out.high
 
         self.assertEqual(rising_edges, 10)
 
@@ -420,17 +408,16 @@ class UARTBaudRateGeneratorTests(unittest.TestCase):
     #   baud = 4,190,000 / 432 = 9699 (≈9600)
 
     def test_9600_baud_10_bits_in_4320_cycles(self):
-        brg = self._make_brg()
-        brg.configure(3, 11)
-        brg.enable()
+        self.brg.configure(432)
+        self.brg.enable()
 
         rising_edges = 0
-        last = brg.baud_clk_out.high
+        last = self.brg.baud_clk_out.high
         for _ in range(4320):
-            brg.tick(1)
-            if brg.baud_clk_out.high and not last:
+            self.brg.tick(1)
+            if self.brg.baud_clk_out.high and not last:
                 rising_edges += 1
-            last = brg.baud_clk_out.high
+            last = self.brg.baud_clk_out.high
 
         self.assertEqual(rising_edges, 10)
 
@@ -475,6 +462,26 @@ class UARTDeviceTests(unittest.TestCase):
 
     def test_brgc0_read_back(self):
         self.assertEqual(self.uart.read(self.uart.BRGC0), 0x39)
+
+    def test_brgc0_tps_zero_does_not_run(self):
+        # TPS=0 is external clock (not supported)
+        self.uart.reset()
+        self.uart.write(self.uart.BRGC0, 0x09)  # TPS=0, MDL=9
+        self.uart.write(self.uart.ASIM0, 0xC8)
+        self.uart.write(self.uart.TXS0_RXB0, 0x55)
+        self.uart.tick(4000)
+        self.assertTrue(self.uart.txd_out.high)
+        self.assertEqual(self.interrupts, [])
+
+    def test_brgc0_mdl_fifteen_does_not_run(self):
+        # MDL=15 is prohibited
+        self.uart.reset()
+        self.uart.write(self.uart.BRGC0, 0x3F)  # TPS=3, MDL=15
+        self.uart.write(self.uart.ASIM0, 0xC8)
+        self.uart.write(self.uart.TXS0_RXB0, 0x55)
+        self.uart.tick(4000)
+        self.assertTrue(self.uart.txd_out.high)
+        self.assertEqual(self.interrupts, [])
 
     def test_asim0_read_back(self):
         self.uart.write(self.uart.ASIM0, 0xC8)
@@ -673,14 +680,13 @@ class UARTReceiverTests(unittest.TestCase):
         self.completions = []
         self.errors = []
 
-        def on_complete(data):
+        def on_complete(data, error):
             self.completions.append(data)
+            if error:
+                self.errors.append(error)
 
-        def on_error(error):
-            self.errors.append(error)
-
-        self.rx = _UARTReceiver(rxd_input, on_complete, on_error)
-        self.rx.configure_brg(3, 9)
+        self.rx = AsyncSerialReceiver(rxd_input, on_complete)
+        self.rx.configure_brg(400)
         rxd_input.on_falling = self.rx._on_rxd_falling
         self.rx.enable()
 
@@ -712,54 +718,53 @@ class UARTReceiverTests(unittest.TestCase):
     # 7N1
 
     def test_7n1_receive_0x55(self):
-        self.rx.configure_frame(7, UARTDevice.PARITY_NONE, 1)
+        self.rx.configure_frame(7, 1, Parity.NONE)
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 1])
         self.assertEqual(self.completions, [0x55])
 
     def test_7n1_receive_0x2a(self):
-        self.rx.configure_frame(7, UARTDevice.PARITY_NONE, 1)
+        self.rx.configure_frame(7, 1, Parity.NONE)
         self._drive_bits([0, 0, 1, 0, 1, 0, 1, 0, 1])
         self.assertEqual(self.completions, [0x2A])
 
     # 8E1
 
     def test_8e1_good_parity(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_EVEN, 1)
+        self.rx.configure_frame(8, 1, Parity.EVEN)
         # 0x55 has 4 ones, even parity bit = 0
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1])
         self.assertEqual(self.completions, [0x55])
         self.assertEqual(self.errors, [])
 
     def test_8e1_bad_parity(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_EVEN, 1)
+        self.rx.configure_frame(8, 1, Parity.EVEN)
         # 0x55 with wrong parity bit (1 instead of 0)
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1])
-        self.assertEqual(self.completions, [])
+        self.assertEqual(self.completions, [0x55])
         self.assertEqual(len(self.errors), 1)
-        self.assertEqual(self.errors[0].data, 0x55)
         self.assertFalse(self.errors[0].framing_error)
         self.assertTrue(self.errors[0].parity_error)
 
     # 8O1
 
     def test_8o1_good_parity(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_ODD, 1)
+        self.rx.configure_frame(8, 1, Parity.ODD)
         # 0x55 has 4 ones, odd parity bit = 1
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1])
         self.assertEqual(self.completions, [0x55])
         self.assertEqual(self.errors, [])
 
     def test_8o1_bad_parity(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_ODD, 1)
+        self.rx.configure_frame(8, 1, Parity.ODD)
         # 0x55 with wrong parity bit (0 instead of 1)
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1])
-        self.assertEqual(self.completions, [])
+        self.assertEqual(self.completions, [0x55])
         self.assertTrue(self.errors[0].parity_error)
 
     # 8Z1 (zero parity, no check on receive)
 
     def test_8z1_ignores_parity_bit(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_ZERO, 1)
+        self.rx.configure_frame(8, 1, Parity.ZERO)
         # parity bit = 1 (wrong for zero parity TX, but RX doesn't check)
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1])
         self.assertEqual(self.completions, [0x55])
@@ -769,18 +774,17 @@ class UARTReceiverTests(unittest.TestCase):
 
     def test_framing_error_bad_stop_bit(self):
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 0])
-        self.assertEqual(self.completions, [])
+        self.assertEqual(self.completions, [0x55])
         self.assertEqual(len(self.errors), 1)
-        self.assertEqual(self.errors[0].data, 0x55)
         self.assertTrue(self.errors[0].framing_error)
         self.assertFalse(self.errors[0].parity_error)
 
     # framing + parity error simultaneously
 
     def test_framing_and_parity_error(self):
-        self.rx.configure_frame(8, UARTDevice.PARITY_EVEN, 1)
+        self.rx.configure_frame(8, 1, Parity.EVEN)
         self._drive_bits([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0])
-        self.assertEqual(self.completions, [])
+        self.assertEqual(self.completions, [0x55])
         self.assertEqual(len(self.errors), 1)
         self.assertTrue(self.errors[0].framing_error)
         self.assertTrue(self.errors[0].parity_error)

@@ -51,46 +51,6 @@ class Governor:
         return max(0, target_wall - actual_wall)
 
 
-class ReferenceTick:
-    """Parts of the system without access to the MCU's system clock
-    sometimes need a timing reference.  This reference does not need
-    to be the CPU clock frequency but must be synchronized to the
-    CPU clock, e.g. to allow single-step to work.  For these use
-    cases, a 1 MHz reference clock is provided."""
-
-    FREQUENCY_HZ = 1_000_000  # always 1 MHz
-
-    def __init__(self, system_clock_hz):
-        if system_clock_hz < self.FREQUENCY_HZ:
-            raise ValueError("System clock %r Hz < 1 MHz" % system_clock_hz)
-
-        self._system_clock_hz = system_clock_hz
-        self._remainder = 0
-        self._listeners = []
-
-    def add_listener(self, listener):
-        """Register an object to receive reference clock ticks.
-        The object must have a tick_1mhz(ticks) method."""
-        if listener not in self._listeners:
-            self._listeners.append(listener)
-
-    def advance(self, inst_cycles):
-        """Inform the reference clock that the CPU has advanced
-        inst_cycles at the system clock frequency.  Listeners of
-        the reference clock will be ticked if it is time."""
-
-        # Accumulate fractional reference ticks as a remainder.  When
-        # enough system cycles have accumulated to produce a whole number
-        # of reference ticks, listeners are notified with the count and
-        # the leftover is kept for the next call.
-        self._remainder += inst_cycles * self.FREQUENCY_HZ
-        ticks = self._remainder // self._system_clock_hz
-        self._remainder %= self._system_clock_hz
-        if ticks > 0:
-            for listener in self._listeners:
-                listener.tick_1mhz(ticks)
-
-
 class _CycleTimer:
     """Measures CPU cycles elapsed over wall-clock time.
 
@@ -160,3 +120,45 @@ class _CycleTimerSample:
         if self.elapsed > 0:
             return self.cycles / self.elapsed / 1_000_000
         return 0.0
+
+
+class ReferenceTick:
+    """Parts of the system without access to the MCU's system clock
+    sometimes need a timing reference.  This reference does not need
+    to be the CPU clock frequency but must be synchronized to the
+    CPU clock, e.g. to allow single-step to work.  For these use
+    cases, a 1 MHz reference clock is provided."""
+
+    FREQUENCY_HZ = 1_000_000  # always 1 MHz
+
+    def __init__(self, system_clock_hz):
+        if system_clock_hz < self.FREQUENCY_HZ:
+            raise ValueError("System clock %r Hz < 1 MHz" % system_clock_hz)
+
+        self._system_clock_hz = system_clock_hz
+        self._remainder = 0
+        self._listeners = []
+
+    def add_listener(self, callback):
+        """Register a callable to receive reference clock ticks.
+        The callable will be called with the number of ticks as
+        a single argument."""
+        if callback not in self._listeners:
+            self._listeners.append(callback)
+
+    def advance(self, inst_cycles):
+        """Inform the reference clock that the CPU has advanced
+        inst_cycles at the system clock frequency.  Listeners of
+        the reference clock will be ticked if it is time."""
+
+        # Accumulate fractional reference ticks as a remainder.  When
+        # enough system cycles have accumulated to produce a whole number
+        # of reference ticks, listeners are notified with the count and
+        # the leftover is kept for the next call.
+        self._remainder += inst_cycles * self.FREQUENCY_HZ
+        ticks = self._remainder // self._system_clock_hz
+        self._remainder %= self._system_clock_hz
+        if ticks > 0:
+            for callback in self._listeners:
+                callback(ticks)
+

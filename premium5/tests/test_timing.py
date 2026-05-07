@@ -138,9 +138,9 @@ class ReferenceTickTests(unittest.TestCase):
 
     def test_no_duplicate_listeners(self):
         rt = ReferenceTick(4_190_000)
-        listener = type('L', (), {'tick_1mhz': lambda self, t: None})()
-        rt.add_listener(listener)
-        rt.add_listener(listener)
+        callback = lambda t: None
+        rt.add_listener(callback)
+        rt.add_listener(callback)
         self.assertEqual(len(rt._listeners), 1)
 
     # advance
@@ -148,10 +148,7 @@ class ReferenceTickTests(unittest.TestCase):
     def test_fires_listener(self):
         rt = ReferenceTick(4_190_000)
         ticks = []
-        class Listener:
-            def tick_1mhz(self, t):
-                ticks.append(t)
-        rt.add_listener(Listener())
+        rt.add_listener(ticks.append)
 
         for _ in range(4190):
             rt.advance(1)
@@ -160,10 +157,7 @@ class ReferenceTickTests(unittest.TestCase):
     def test_remainder_carried_across_calls(self):
         rt = ReferenceTick(4_190_000)
         ticks = []
-        class Listener:
-            def tick_1mhz(self, t):
-                ticks.append(t)
-        rt.add_listener(Listener())
+        rt.add_listener(ticks.append)
 
         for _ in range(42):
             rt.advance(100)
@@ -173,14 +167,8 @@ class ReferenceTickTests(unittest.TestCase):
         rt = ReferenceTick(4_190_000)
         ticks_a = []
         ticks_b = []
-        class ListenerA:
-            def tick_1mhz(self, t):
-                ticks_a.append(t)
-        class ListenerB:
-            def tick_1mhz(self, t):
-                ticks_b.append(t)
-        rt.add_listener(ListenerA())
-        rt.add_listener(ListenerB())
+        rt.add_listener(ticks_a.append)
+        rt.add_listener(ticks_b.append)
 
         for _ in range(4190):
             rt.advance(1)

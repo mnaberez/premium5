@@ -64,8 +64,8 @@ class Emulator:
 
         self.governor = Governor(self.SYSTEM_CLOCK_HZ)
         self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)
-        self.reference_tick.add_listener(self.mfsw)
-        self.reference_tick.add_listener(self.fis)
+        self.reference_tick.add_listener(self.mfsw.tick_1mhz)
+        self.reference_tick.add_listener(self.fis.tick_1mhz)
 
         self.running = False
         self.steps_per_frame = 50000
