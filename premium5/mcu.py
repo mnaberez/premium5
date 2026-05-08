@@ -9,7 +9,7 @@ from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
                               Port7Device, Port8Device, Port9Device)
 from premium5.devices import SPIControllerDevice, UARTDevice
-from premium5.digital import InputMux, LogicInput, LogicOutput
+from premium5.digital import Mux, LogicInput, LogicOutput
 
 
 class UPD78F0831Y:
@@ -129,13 +129,13 @@ class UPD78F0831Y:
         self._intc.connect(self._csi30, self._csi30.INT_TRANSFER, self._intc.INTCSI30)
 
         # P3.1/SO30: mux between GPIO and SPI data out
-        self._so30_mux = InputMux()
+        self._so30_mux = Mux()
         self.p3.pins[1].output.bind(self._so30_mux.input_a)
         self._csi30.dat_out.bind(self._so30_mux.input_b)
         self._csi30.enabled_out.bind(self._so30_mux.select)
 
         # P3.2/SCK30: mux between GPIO and SPI clock out
-        self._sck30_mux = InputMux()
+        self._sck30_mux = Mux()
         self.p3.pins[2].output.bind(self._sck30_mux.input_a)
         self._csi30.clk_out.bind(self._sck30_mux.input_b)
         self._csi30.enabled_out.bind(self._sck30_mux.select)
@@ -171,7 +171,7 @@ class UPD78F0831Y:
         self._intc.connect(self._uart0, self._uart0.INT_ERR, self._intc.INTSER0)
 
         # P2.5/TxD0: mux between GPIO and UART data out
-        self._txd0_mux = InputMux()
+        self._txd0_mux = Mux()
         self.p2.pins[5].output.bind(self._txd0_mux.input_a)
         self._uart0.txd_out.bind(self._txd0_mux.input_b)
         self._uart0.tx_enabled_out.bind(self._txd0_mux.select)

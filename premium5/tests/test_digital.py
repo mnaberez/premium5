@@ -1,5 +1,5 @@
 import unittest
-from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Mux, CSI30Mux
+from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Demux, CSI30Demux
 
 
 class LogicOutputTests(unittest.TestCase):
@@ -247,10 +247,10 @@ class InverterTests(unittest.TestCase):
         self.assertTrue(inverted_signal.high)
 
 
-class MuxTests(unittest.TestCase):
+class DemuxTests(unittest.TestCase):
 
     def test_default_routes_to_output_a(self):
-        mux = Mux()
+        mux = Demux()
         signal = LogicOutput(Level.HIGH)
         signal.bind(mux.input)
 
@@ -262,7 +262,7 @@ class MuxTests(unittest.TestCase):
         self.assertTrue(mux.output_b.floating)
 
     def test_select_low_routes_to_output_a(self):
-        mux = Mux()
+        mux = Demux()
         select = LogicOutput(Level.LOW)
         select.bind(mux.select)
         signal = LogicOutput(Level.HIGH)
@@ -276,7 +276,7 @@ class MuxTests(unittest.TestCase):
         self.assertTrue(mux.output_b.floating)
 
     def test_select_high_routes_to_output_b(self):
-        mux = Mux()
+        mux = Demux()
         select = LogicOutput(Level.HIGH)
         select.bind(mux.select)
         signal = LogicOutput(Level.HIGH)
@@ -290,7 +290,7 @@ class MuxTests(unittest.TestCase):
         self.assertTrue(mux.output_a.floating)
 
     def test_select_floating_routes_to_output_a(self):
-        mux = Mux()
+        mux = Demux()
         select = LogicOutput(Level.FLOATING)
         select.bind(mux.select)
         self.assertTrue(mux.select.low)  # pulled down
@@ -305,7 +305,7 @@ class MuxTests(unittest.TestCase):
         self.assertTrue(mux.output_b.floating)
 
     def test_switching_pushes_current_levels(self):
-        mux = Mux()
+        mux = Demux()
         select = LogicOutput(Level.LOW)
         select.bind(mux.select)
         signal = LogicOutput(Level.HIGH)
@@ -320,10 +320,10 @@ class MuxTests(unittest.TestCase):
         self.assertTrue(mux.output_a.floating)
 
 
-class CSI30MuxTests(unittest.TestCase):
+class CSI30DemuxTests(unittest.TestCase):
 
     def test_ctor_routes_to_upd(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         csi30_clk_out = LogicOutput(Level.HIGH)
         csi30_clk_out.bind(mux.clk_from_csi30_in)
         csi30_dat_out = LogicOutput(Level.LOW)
@@ -343,7 +343,7 @@ class CSI30MuxTests(unittest.TestCase):
         self.assertTrue(mux.dat_to_fis_out.floating)
 
     def test_p43_floating_routes_to_upd(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         p43_out = LogicOutput(Level.FLOATING)
         p43_out.bind(mux.p43_in)
         self.assertTrue(mux.p43_in.low)  # pulled down
@@ -366,7 +366,7 @@ class CSI30MuxTests(unittest.TestCase):
         self.assertTrue(mux.dat_to_fis_out.floating)
 
     def test_p43_going_low_routes_to_upd(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         p43_out = LogicOutput(Level.LOW)
         p43_out.bind(mux.p43_in)
         csi30_clk_out = LogicOutput(Level.HIGH)
@@ -388,7 +388,7 @@ class CSI30MuxTests(unittest.TestCase):
         self.assertTrue(mux.dat_to_fis_out.floating)
 
     def test_p43_going_high_routes_to_fis(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         p43_out = LogicOutput(Level.HIGH)
         p43_out.bind(mux.p43_in)
         csi30_clk_out = LogicOutput(Level.HIGH)
@@ -410,7 +410,7 @@ class CSI30MuxTests(unittest.TestCase):
         self.assertTrue(mux.dat_to_upd_out.floating)
 
     def test_switching_to_fis_pushes_current_levels(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         p43_out = LogicOutput(Level.LOW)
         p43_out.bind(mux.p43_in)
         csi30_clk_out = LogicOutput(Level.HIGH)
@@ -434,7 +434,7 @@ class CSI30MuxTests(unittest.TestCase):
         self.assertTrue(mux.dat_to_upd_out.floating)
 
     def test_switching_to_upd_pushes_current_levels(self):
-        mux = CSI30Mux()
+        mux = CSI30Demux()
         p43_out = LogicOutput(Level.HIGH)
         p43_out.bind(mux.p43_in)
         csi30_clk_out = LogicOutput(Level.HIGH)

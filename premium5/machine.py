@@ -1,5 +1,5 @@
 from k0emu.i2c import StubI2CTarget
-from premium5.digital import CSI30Mux, Inverter, Level, LogicOutput
+from premium5.digital import CSI30Demux, Inverter, Level, LogicOutput
 from premium5.fis import FIS
 from premium5.mfsw import MFSWTransmitter
 from premium5.i2c import M24C04
@@ -39,7 +39,7 @@ class Machine:
 
     def _init_upd16432b(self):
         self.upd = UPD16432B()
-        self._csi30_mux = CSI30Mux()
+        self._csi30_mux = CSI30Demux()
         self.mcu.p4.pins[3].output.bind(self._csi30_mux.p43_in)
         self.mcu.p32_sck30.bind(self._csi30_mux.clk_from_csi30_in)
         self.mcu.p31_so30.bind(self._csi30_mux.dat_from_csi30_in)

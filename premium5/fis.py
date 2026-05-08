@@ -49,7 +49,7 @@ class FISReceiver:
 
     CLK/DAT could in theory be directly connected to the radio's SPI controller
     CSI30.  In practice, they need to be connected through a transparent mux
-    (CSI30Mux) because CSI30 is also used to drive the uPD16432B.
+    (CSI30Demux) because CSI30 is also used to drive the uPD16432B.
 
     This receiver handles the wire protocol only: SPI bit shifting, ENA
     handshake timing, packet assembly, and checksum validation.  When a

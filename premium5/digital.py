@@ -148,8 +148,9 @@ class Inverter(object):
         self.input.on_falling = self.output.set_high
 
 
-class InputMux(object):
-    """Routes one of two inputs to an output based on a select signal.
+class Mux(object):
+    """
+    2 input, 1 output multiplexer:
 
     select LOW:  input_a routes to output
     select HIGH: input_b routes to output
@@ -181,8 +182,9 @@ class InputMux(object):
         self.input_a.on_falling = LogicInput._no_callback
 
 
-class Mux(object):
-    """Routes an input to one of two outputs based on a select signal.
+class Demux(object):
+    """
+    1 input, 2 output multiplexer:
 
     select LOW:  input routes to output_a, output_b floats
     select HIGH: input routes to output_b, output_a floats
@@ -212,7 +214,7 @@ class Mux(object):
         self.input.on_falling = self.output_b.set_low
 
 
-class CSI30Mux(object):
+class CSI30Demux(object):
     """Component to switch CSI30 between uPD16432B and FIS (3LB).
 
     The radio uses the SPI controller CSI30 for both its own
@@ -221,7 +223,7 @@ class CSI30Mux(object):
     the FIS, otherwise it leaves P4.3 low.
 
     Guess:
-        P4.3 controls some sort of multiplexer.  Its function is
+        P4.3 controls some sort of demultiplexer.  Its function is
         probably to prevent CLK and DAT changes from "leaking"
         out to the FIS while the uPD16432B is being accessed.  It
         might also prevent the uPD16432B from seeing CLK and DAT
@@ -233,25 +235,25 @@ class CSI30Mux(object):
     """
 
     def __init__(self):
-        self._clk_mux = Mux()
-        self._dat_mux = Mux()
+        self._clk_demux = Demux()
+        self._dat_demux = Demux()
 
         # input from P4.3: low=uPD16432B, high=FIS
         self.p43_in = LogicInput(pull_level=Level.LOW)
 
         # fan out input from P4.3 to both mux selects
         self._p43_fanout = LogicOutput()
-        self._p43_fanout.bind(self._clk_mux.select)
-        self._p43_fanout.bind(self._dat_mux.select)
+        self._p43_fanout.bind(self._clk_demux.select)
+        self._p43_fanout.bind(self._dat_demux.select)
         self.p43_in.on_falling = self._p43_fanout.set_low
         self.p43_in.on_rising  = self._p43_fanout.set_high
 
         # expose clk in/outs with descriptive names
-        self.clk_from_csi30_in = self._clk_mux.input
-        self.clk_to_upd_out = self._clk_mux.output_a
-        self.clk_to_fis_out = self._clk_mux.output_b
+        self.clk_from_csi30_in = self._clk_demux.input
+        self.clk_to_upd_out = self._clk_demux.output_a
+        self.clk_to_fis_out = self._clk_demux.output_b
 
         # expose dat in/outs with descriptive names
-        self.dat_from_csi30_in = self._dat_mux.input
-        self.dat_to_upd_out = self._dat_mux.output_a
-        self.dat_to_fis_out = self._dat_mux.output_b
+        self.dat_from_csi30_in = self._dat_demux.input
+        self.dat_to_upd_out = self._dat_demux.output_a
+        self.dat_to_fis_out = self._dat_demux.output_b
