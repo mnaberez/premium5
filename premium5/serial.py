@@ -2,7 +2,7 @@
 
 This module is used to build async serial devices that run within the
 emulator.  It is used by the emulation of the 78F0831Y's USART0
-(UARTDevice) but not coupled to it.  It's possible, for example, use
+(UARTDevice) but not coupled to it.  It's possible, for example, to use
 the AsyncSerialTransmitter in this module to transmit data into USART0's
 receiver.  Under the hood, USART0 receives logic levels that change
 at the correct times, just as the real USART0 does over a physical wire.
