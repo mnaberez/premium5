@@ -1,5 +1,5 @@
 from k0emu.devices import BaseDevice
-from premium5.digital import LogicInput, LogicOutput, Level
+from premium5.digital import LogicInput, LogicOutput, Level, Mux
 from premium5.serial import AsyncSerialTransmitter, AsyncSerialReceiver, Parity
 
 
@@ -331,8 +331,15 @@ class Port9Device(PortDevice):
 class SPIControllerDevice(BaseDevice):
     """3-wire serial I/O (clocked serial interface).
 
-    Shifts out one bit per tick on clk_out and dat_out LogicOutputs.
-    Reads dat_in LogicInput on each rising clock edge.
+    One shift register clocked by falling/rising edges.  The clock
+    source is either an internal prescaler (SCL=01/10/11) or an
+    external signal on clk_in (SCL=00).  Both feed the same shift
+    logic through callbacks.
+
+    uPD78F0833Y subseries manual, Chapter 14:
+        Data shifts out (SO) on the falling edge of SCK.
+        Data latches in (SI) on the rising edge of SCK.
+        MSB first, 8 bits per transfer.
 
     Registers:
         0: SIO3x  - shift register
@@ -346,20 +353,40 @@ class SPIControllerDevice(BaseDevice):
     # device-local interrupt id
     INT_TRANSFER = 0
 
-    # clock phases
-    _CLK_FALLING = 0
-    _CLK_RISING = 1
-
     def __init__(self, name):
         super().__init__(name)
         self.size = 2
+
+        # electrical interface
+        self.clk_in = LogicInput(pull_level=Level.HIGH)
         self.clk_out = LogicOutput(Level.HIGH)
-        self.dat_out = LogicOutput()
         self.dat_in = LogicInput(pull_level=Level.LOW)
-        self.enabled_out = LogicOutput(Level.LOW)
+        self.dat_out = LogicOutput()
+        self.enabled_out = LogicOutput(Level.LOW) # XXX does not handle receive-only
+
+        # internal clock output that we'll generate ourselves in tick()
+        self._internal_clk_out = LogicOutput(Level.HIGH)
+
+        # clock multiplexer: switches between internal and external clock
+        mux = Mux()
+        self._internal_clk_out.bind(mux.input_a)
+        self.clk_in.as_output().bind(mux.input_b)
+
+        # control output to multiplexer: low=internal, high=external clock
+        self._clk_select_out = LogicOutput(Level.LOW)
+        self._clk_select_out.bind(mux.select)
+
+        # state must be initialized before wiring callbacks
+        self._init_state()
+
+        # callbacks that fire when selected clock changes
+        sck_in = mux.output.as_input()
+        sck_in.on_falling = self._on_clk_falling
+        sck_in.on_rising  = self._on_clk_rising
+
         self.reset()
 
-    def reset(self):
+    def _init_state(self):
         # register defaults
         self._sio = 0x00
         self._csim = 0x00
@@ -369,13 +396,67 @@ class SPIControllerDevice(BaseDevice):
         self._cycles_until_sck_edge = 0  # remaining
 
         # internal shifting state
-        self._clk_phase = self._CLK_FALLING
         self._shift_out = 0x00
         self._shift_in = 0x00
         self._bits_remaining = 0
 
-        # enable
+    def reset(self):
+        self._init_state()
+        self.clk_out.set_high()
         self.enabled_out.set_low()
+
+    def tick(self, cycles):
+        """Advance the internal clock prescaler."""
+        if self._is_external_clock():
+            return
+
+        for _ in range(cycles):
+            if self._bits_remaining == 0:
+                return  # nothing for the spi controller to do
+
+            self._cycles_until_sck_edge -= 1
+            if self._cycles_until_sck_edge > 0:
+                continue # not time yet, loop to consume another cycle
+
+            # it's time to shift a bit in/out
+            self._cycles_until_sck_edge = self._cycles_per_sck_edge
+            self._internal_clk_out.toggle()
+
+    def _on_clk_falling(self):
+        """Falling edge: shift out data, then drive clk_out low.
+        Data is set before the clock edge so external devices
+        see valid data when they latch on the falling edge."""
+        if self._bits_remaining == 0:
+            return
+
+        if self._shift_out & 0x80:
+            self.dat_out.set_high()
+        else:
+            self.dat_out.set_low()
+
+        self._shift_out = (self._shift_out << 1) & 0xFF
+
+        # only drive clk_out for internal clock; in external clock
+        # mode the external device is already driving the pin
+        if not self._is_external_clock():
+            self.clk_out.set_low()
+
+    def _on_clk_rising(self):
+        """Rising edge: latch data from SI."""
+        if self._bits_remaining == 0:
+            return
+
+        if not self._is_external_clock():
+            self.clk_out.set_high()
+
+        self._shift_in = (self._shift_in << 1) & 0xFF
+        if self.dat_in.high:
+            self._shift_in |= 1
+
+        self._bits_remaining -= 1
+        if self._bits_remaining == 0:
+            self._sio = self._shift_in
+            self.bus.interrupt(self, self.INT_TRANSFER)
 
     def read(self, register):
         self._check_bounds(register)
@@ -384,6 +465,11 @@ class SPIControllerDevice(BaseDevice):
             return self._csim
 
         elif register == self.SIO:
+            # uPD78F0833Y subseries manual: in receive-only mode (MODE=1),
+            # reading SIO triggers the transfer.
+            if (self._csim & 0x80) and self._is_receive_only():
+                self._shift_out = 0x00
+                self._start_transfer()
             return self._sio
 
     def write(self, register, value):
@@ -392,7 +478,7 @@ class SPIControllerDevice(BaseDevice):
         if register == self.CSIM:
             was_enabled = self._csim & 0x80
             self._csim = value
-            
+
             if self._csim & 0x80:
                 # now enabled
                 self.enabled_out.set_high()
@@ -403,62 +489,42 @@ class SPIControllerDevice(BaseDevice):
                     self._bits_remaining = 0
                 self.enabled_out.set_low()
 
-            # CPU ticks between each SCK edge (half the SPI clock period).
-            # Each bit takes two half-periods: falling edge, then rising edge.
-            self._cycles_per_sck_edge = (
-                0,       # 0b00: External clock in from SCK30 (XXX not emulated)
-                8  // 2, # 0b01: fX/8  (524 kHz)
-                16 // 2, # 0b10: fX/16 (262 kHz)
-                64 // 2, # 0b11: fX/64 (65.5 kHz)
-            )[self._csim & 0x03]
+            # clock source selection
+            if self._is_external_clock():
+                self._clk_select_out.set_high()  # select external clock
+
+                self._cycles_per_sck_edge = 0
+            else:
+                self._clk_select_out.set_low()   # select internal clock
+
+                # CPU ticks between each SCK edge (half the SPI clock period).
+                # Each bit takes two half-periods: falling edge, then rising edge.
+                self._cycles_per_sck_edge = (
+                    0,       # 0b00: (not used, external selected above)
+                    8  // 2, # 0b01: fX/8  (524 kHz)
+                    16 // 2, # 0b10: fX/16 (262 kHz)
+                    64 // 2, # 0b11: fX/64 (65.5 kHz)
+                )[self._csim & 0x03]
 
         elif register == self.SIO:
-            if self._csim & 0x80:
-                # write to SIO while enabled starts a transfer
+            # uPD78F0833Y subseries manual: in transmit/transmit-and-receive
+            # mode (MODE=0), writing SIO triggers the transfer.
+            if (self._csim & 0x80) and not self._is_receive_only():
                 self._shift_out = value
-                self._shift_in = 0x00
-                self._bits_remaining = 8
-                self._clk_phase = self._CLK_FALLING
-                self._cycles_until_sck_edge = self._cycles_per_sck_edge
+                self._start_transfer()
 
-    def tick(self, cycles):
-        for _ in range(cycles):
-            if self._bits_remaining == 0:
-                return # nothing for the spi controller to do
-
-            self._cycles_until_sck_edge -= 1
-            if self._cycles_until_sck_edge > 0:
-                continue # not time yet, loop to consume another cycle
-
-            # it's time to shift a bit in/out
-            if self._clk_phase == self._CLK_FALLING:
-                # Falling edge: shift out MSB
-                if self._shift_out & 0x80:
-                    self.dat_out.set_high()
-                else:
-                    self.dat_out.set_low()
-                self._shift_out = (self._shift_out << 1) & 0xFF
-
-                self.clk_out.set_low()
-                self._clk_phase = self._CLK_RISING
-
-            else:
-                # Rising edge: shift in from dat_in
-                self._shift_in = (self._shift_in << 1) & 0xFF
-                if self.dat_in.high:
-                    self._shift_in |= 1
-
-                self.clk_out.set_high()
-                self._clk_phase = self._CLK_FALLING
-
-                # decrement bits remaining, fire interrupt if done
-                self._bits_remaining -= 1
-                if self._bits_remaining == 0:
-                    self._sio = self._shift_in
-                    self.bus.interrupt(self, self.INT_TRANSFER)
-
-            # bit has been shifted; reload to wait for the next bit
+    def _start_transfer(self):
+        """Start an 8-bit transfer."""
+        self._shift_in = 0x00
+        self._bits_remaining = 8
+        if not self._is_external_clock():
             self._cycles_until_sck_edge = self._cycles_per_sck_edge
+
+    def _is_receive_only(self):
+        return bool(self._csim & 0x04)
+
+    def _is_external_clock(self):
+        return (self._csim & 0x03) == 0x00
 
 
 class UARTDevice(BaseDevice):

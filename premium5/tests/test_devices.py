@@ -154,6 +154,23 @@ class SPIControllerDeviceTests(unittest.TestCase):
             self.spi.tick(4)  # rising edge
         self.assertEqual(bits, [1, 0, 1, 0, 0, 1, 0, 1])
 
+    def test_dat_out_ready_before_falling_edge(self):
+        # An external device that latches on the falling edge of clk_out
+        # must see the correct data bit at the moment the edge fires.
+        # This is how FIS and UPD16432B receive data from CSI30.
+        clk_monitor = LogicInput()
+        self.spi.clk_out.bind(clk_monitor)
+
+        bits = []
+        def on_clk_falling():
+            bits.append(int(self.spi.dat_out.high))
+        clk_monitor.on_falling = on_clk_falling
+
+        self._enable()
+        self.spi.write(self.spi.SIO, 0xA5)  # 10100101
+        self._transfer()
+        self.assertEqual(bits, [1, 0, 1, 0, 0, 1, 0, 1])
+
     # transfer: data input
 
     def test_shifts_in_dat_on_rising_edge(self):
@@ -251,6 +268,143 @@ class SPIControllerDeviceTests(unittest.TestCase):
         self.assertEqual(self.interrupts, [])
         self.spi.tick(1)
         self.assertEqual(len(self.interrupts), 1)
+
+
+    # MODE bit (receive-only mode)
+
+    def test_write_sio_in_receive_only_mode_does_not_start_transfer(self):
+        # MODE=1, SCL=01 (fX/8): 0x85
+        self.spi.write(self.spi.CSIM, 0x85)
+        self.spi.write(self.spi.SIO, 0xA5)
+        self.spi.tick(100)
+        self.assertEqual(self.interrupts, [])
+
+    def test_read_sio_in_receive_only_mode_starts_transfer(self):
+        # MODE=1, SCL=01 (fX/8): 0x85
+        self.spi.write(self.spi.CSIM, 0x85)
+        self.spi.read(self.spi.SIO)
+        # tick through a full 8-bit transfer
+        for _ in range(64):
+            self.spi.tick(1)
+        self.assertEqual(len(self.interrupts), 1)
+
+    def test_read_sio_in_transmit_mode_does_not_start_transfer(self):
+        # MODE=0, SCL=01 (fX/8): 0x81
+        self._enable()
+        self.spi.read(self.spi.SIO)
+        self.spi.tick(100)
+        self.assertEqual(self.interrupts, [])
+
+    def test_receive_only_mode_shifts_in_data(self):
+        driver = LogicOutput(Level.LOW)
+        driver.bind(self.spi.dat_in)
+
+        self.spi.write(self.spi.CSIM, 0x85)  # MODE=1, SCL=01 (fX/8)
+        self.spi.read(self.spi.SIO)  # trigger transfer
+
+        # clock in 0xC3 = 11000011
+        input_bits = [1, 1, 0, 0, 0, 0, 1, 1]
+        for bit in input_bits:
+            self.spi.tick(4)  # falling edge
+            if bit:
+                driver.set_high()
+            else:
+                driver.set_low()
+            self.spi.tick(4)  # rising edge: latch
+
+        self.assertEqual(self.spi.read(self.spi.SIO), 0xC3)
+
+    # external clock (SCL=00)
+
+    def test_external_clock_tick_does_nothing(self):
+        # SCL=00 (external clock), MODE=0: 0x80
+        self.spi.write(self.spi.CSIM, 0x80)
+        self.spi.write(self.spi.SIO, 0xA5)
+        self.spi.tick(1000)
+        self.assertEqual(self.interrupts, [])
+
+    def test_external_clock_shifts_in_data(self):
+        ext_clk = LogicOutput(Level.HIGH)
+        ext_dat = LogicOutput(Level.LOW)
+        ext_clk.bind(self.spi.clk_in)
+        ext_dat.bind(self.spi.dat_in)
+
+        # SCL=00, MODE=1 (receive-only): 0x84
+        self.spi.write(self.spi.CSIM, 0x84)
+        self.spi.read(self.spi.SIO)  # trigger transfer
+
+        # clock in 0xA5 = 10100101
+        input_bits = [1, 0, 1, 0, 0, 1, 0, 1]
+        for bit in input_bits:
+            ext_clk.set_low()     # falling edge
+            if bit:
+                ext_dat.set_high()
+            else:
+                ext_dat.set_low()
+            ext_clk.set_high()    # rising edge: latch
+
+        self.assertEqual(self.spi.read(self.spi.SIO), 0xA5)
+
+    def test_external_clock_fires_interrupt_after_8_bits(self):
+        ext_clk = LogicOutput(Level.HIGH)
+        ext_clk.bind(self.spi.clk_in)
+
+        # SCL=00, MODE=1 (receive-only): 0x84
+        self.spi.write(self.spi.CSIM, 0x84)
+        self.spi.read(self.spi.SIO)  # trigger transfer
+
+        for _ in range(8):
+            ext_clk.set_low()
+            ext_clk.set_high()
+
+        self.assertEqual(len(self.interrupts), 1)
+        self.assertIs(self.interrupts[0][0], self.spi)
+        self.assertEqual(self.interrupts[0][1], self.spi.INT_TRANSFER)
+
+    def test_external_clock_receives_multiple_bytes(self):
+        ext_clk = LogicOutput(Level.HIGH)
+        ext_dat = LogicOutput(Level.LOW)
+        ext_clk.bind(self.spi.clk_in)
+        ext_dat.bind(self.spi.dat_in)
+
+        # SCL=00, MODE=1 (receive-only): 0x84
+        self.spi.write(self.spi.CSIM, 0x84)
+
+        send_bytes = [0x34, 0xBE, 0xFC]
+        received = []
+        for byte_val in send_bytes:
+            # trigger receive by reading SIO
+            self.spi.read(self.spi.SIO)
+
+            # clock in 8 bits MSB first
+            for bit_pos in range(8):
+                bit = (byte_val >> (7 - bit_pos)) & 1
+                ext_clk.set_low()
+                if bit:
+                    ext_dat.set_high()
+                else:
+                    ext_dat.set_low()
+                ext_clk.set_high()
+
+            received.append(self.spi.read(self.spi.SIO))
+
+        self.assertEqual(received, send_bytes)
+
+    def test_external_clock_shifts_out_data(self):
+        ext_clk = LogicOutput(Level.HIGH)
+        ext_clk.bind(self.spi.clk_in)
+
+        # SCL=00, MODE=0 (transmit): 0x80
+        self.spi.write(self.spi.CSIM, 0x80)
+        self.spi.write(self.spi.SIO, 0xA5)  # 10100101
+
+        bits = []
+        for _ in range(8):
+            ext_clk.set_low()     # falling edge: data set
+            bits.append(int(self.spi.dat_out.high))
+            ext_clk.set_high()    # rising edge
+
+        self.assertEqual(bits, [1, 0, 1, 0, 0, 1, 0, 1])
 
 
 class UARTBaudRateGeneratorTests(unittest.TestCase):

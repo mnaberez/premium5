@@ -55,6 +55,12 @@ class LogicOutput(object):
     def floating(self):
         return self._level == Level.FLOATING
 
+    def as_input(self):
+        """Create a LogicInput that follows this output's level."""
+        inp = LogicInput()
+        self.bind(inp)
+        return inp
+
 
 class LogicInput(object):
     """Receives a logic level from a bound LogicOutput.  Optionally
@@ -110,6 +116,13 @@ class LogicInput(object):
 
     def __int__(self):
         return int(self._resolved_level == Level.HIGH)
+
+    def as_output(self):
+        """Create a LogicOutput that follows this input's level."""
+        out = LogicOutput(self._resolved_level)
+        self.on_rising = out.set_high
+        self.on_falling = out.set_low
+        return out
 
     # LogicOutput notifies us when the level changes
 
