@@ -55,6 +55,10 @@ class UPD78F0831Y:
         self.p32_sck30_out = None  # P3.2/SCK30 output (CSI30/P3 muxed)
         self.p30_si30_in = None    # P3.0/SI30 input   (CSI30/P3 muxed)
 
+        # Multiplexed pins: CSI31 muxed with GPIO
+        self.p22_sck31_in = None   # P2.2/SCK31 input  (CSI31/P2 muxed)
+        self.p20_si31_in = None    # P2.0/SI31 input   (CSI31/P2 muxed)
+
         # Multiplexed pins: UART0 muxed with GPIO
         self.p25_txd0_out = None   # P2.5/TxD0 output (UART0/P2 muxed)
         self.p24_rxd0_in = None    # P2.4/RxD0 input  (UART0/P2 muxed)
@@ -150,9 +154,21 @@ class UPD78F0831Y:
                                           self._csi30.dat_in)
 
     def _init_csi31(self):
-        # TODO: CSI31 (CDC) not mapped — no CD changer connected.
-        # FF1B and FFB8 are unmapped; firmware writes are ignored.
-        pass
+        bus = self.proc.bus
+
+        self._csi31 = SPIControllerDevice("csi31")
+        bus.add_device(self._csi31, (0xFF1B, 0xFF1B), (0xFFB8, 0xFFB8))
+        self._intc.connect(self._csi31, self._csi31.INT_TRANSFER, self._intc.INTCSI31)
+
+        # P2.2/SCK31: external clock input from CDC (active-low, inverted)
+        self.p22_sck31_in = LogicInput()
+        self.p22_sck31_in.monitor().drives(self.p2.pins[2].input,
+                                           self._csi31.clk_in)
+
+        # P2.0/SI31: data input from CDC (active-low, inverted)
+        self.p20_si31_in = LogicInput()
+        self.p20_si31_in.monitor().drives(self.p2.pins[0].input, 
+                                          self._csi31.dat_in)
 
     def _init_uart0(self):
         bus = self.proc.bus

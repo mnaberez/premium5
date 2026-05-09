@@ -10,7 +10,7 @@ from k0emu.processor import RegisterPairs, Flags, RunState
 from premium5.eeprom import populate
 from premium5.machine import Machine
 from premium5.digital import Level, LogicOutput
-from premium5.timing import Governor, ReferenceTick
+from premium5.timing import Governor
 
 
 class Listing:
@@ -39,8 +39,10 @@ class Emulator:
     SYSTEM_CLOCK_HZ = 4_190_000  # cpu clock frequency (4.19 MHz)
 
     def __init__(self, rom_path, listing=None):
-        machine = Machine()
+        machine = Machine(self.SYSTEM_CLOCK_HZ)
+        self.machine = machine
         mcu = machine.mcu
+
         self.proc = mcu.proc
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
@@ -50,6 +52,7 @@ class Emulator:
         self.upd = machine.upd
         self.fis = machine.fis
         self.mfsw = machine.mfsw
+        self.cdc = machine.cdc
 
         self._alarm_led = mcu.p3.pins[3]
 
@@ -58,10 +61,6 @@ class Emulator:
         self._p02_driver = mcu.p0.pins[2].input.driver(Level.HIGH)
 
         self.governor = Governor(self.SYSTEM_CLOCK_HZ)
-        self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)
-        self.reference_tick.add_listener(self.mfsw.tick_1mhz)
-        self.reference_tick.add_listener(self.fis.tick_1mhz)
-
         self.running = False
         self.steps_per_frame = 50000
         self._disasm_history = deque(maxlen=20)
@@ -144,7 +143,7 @@ class Emulator:
             self.proc.step()
             cycles = self.proc.inst_cycles
             self.governor.advance(cycles)
-            self.reference_tick.advance(cycles)
+            self.machine.advance(cycles)
         for pc in recent_pcs:
             self._disasm_at(pc)
 
@@ -164,7 +163,7 @@ class Emulator:
         self.proc.step()
         cycles = self.proc.inst_cycles
         self.governor.advance(cycles)
-        self.reference_tick.advance(cycles)
+        self.machine.advance(cycles)
 
     def handle_command(self, cmd):
         action = cmd.get('action')

@@ -1,22 +1,25 @@
 from k0emu.i2c import StubI2CTarget
-from premium5.digital import Demux, Level, LogicOutput
+from premium5.cdc import CDC
+from premium5.digital import Demux, Level
 from premium5.fis import FIS
 from premium5.mfsw import MFSWTransmitter
 from premium5.i2c import M24C04
 from premium5.mcu import UPD78F0831Y
 from premium5.spi import UPD16432B
-
+from premium5.timing import ReferenceTick
 
 class Machine:
     """The Premium 5 radio board: MCU + external devices."""
 
-    def __init__(self):
+    def __init__(self, system_clock_hz):
         self.mcu = UPD78F0831Y()
+        self.ref_tick = ReferenceTick(system_clock_hz)
 
         self._init_pin_drivers()
         self._init_i2c_targets()
         self._init_upd16432b_and_fis()
         self._init_mfsw()
+        self._init_cdc()
 
     def _init_pin_drivers(self):
         # P0.1/INTP1: firmware checks this pin during power-on.
@@ -65,6 +68,7 @@ class Machine:
         self.upd.dat_out.drives(self.mcu.p30_si30_in)
 
         self.fis = FIS()
+        self.ref_tick.add_listener(self.fis.tick_1mhz)
         clk_demux.output_b.drives(self.fis.clk_in)
         dat_demux.output_b.drives(self.fis.dat_in)
         self.mcu.p4.pins[4].output.drives(self.fis.ena_in)
@@ -72,4 +76,21 @@ class Machine:
 
     def _init_mfsw(self):
         self.mfsw = MFSWTransmitter()
+        self.ref_tick.add_listener(self.mfsw.tick_1mhz)
         self.mfsw.swc_out.inverted().drives(self.mcu.p0.pins[0].input)
+
+    def _init_cdc(self):
+        self.cdc = CDC()
+        self.ref_tick.add_listener(self.cdc.tick_1mhz)
+
+        # P5.7 CDC DO (command from radio, inverted through HEF40106BT)
+        self.mcu.p5.pins[7].output.inverted().drives(self.cdc.cmd_in)
+
+        # CDC CLK -> inverter (HEF40106BT) -> P2.2/SCK31
+        self.cdc.clk_out.inverted().drives(self.mcu.p22_sck31_in)
+
+        # CDC DAT -> inverter (HEF40106BT) -> P2.0/SI31
+        self.cdc.dat_out.inverted().drives(self.mcu.p20_si31_in)
+
+    def advance(self, cycles):
+        self.ref_tick.advance(cycles)
