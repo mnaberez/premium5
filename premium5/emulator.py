@@ -54,13 +54,13 @@ class Emulator:
         self.mfsw = machine.mfsw
 
         self._power_key = LogicOutput(Level.HIGH)
-        self._power_key.bind(mcu.p0.pins[4].input)
+        self._power_key.drives(mcu.p0.pins[4].input)
 
         self._stop_eject_key = LogicOutput(Level.HIGH)
-        self._stop_eject_key.bind(mcu.p0.pins[6].input)
+        self._stop_eject_key.drives(mcu.p0.pins[6].input)
 
         self._p02_driver = LogicOutput(Level.HIGH)
-        self._p02_driver.bind(mcu.p0.pins[2].input)
+        self._p02_driver.drives(mcu.p0.pins[2].input)
 
         self.governor = Governor(self.SYSTEM_CLOCK_HZ)
         self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)

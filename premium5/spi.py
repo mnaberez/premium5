@@ -19,10 +19,10 @@ class UPD16432B(object):
         self.dat_in = LogicInput(pull_level=Level.LOW)
         self.dat_out = LogicOutput()
 
-        self.stb_in.on_rising  = self._on_stb_rising
-        self.stb_in.on_falling = self._on_stb_falling
-        self.clk_in.on_rising  = self._on_clk_rising
-        self.clk_in.on_falling = self._on_clk_falling
+        self.stb_in.on_rising(self._on_stb_rising)
+        self.stb_in.on_falling(self._on_stb_falling)
+        self.clk_in.on_rising(self._on_clk_rising)
+        self.clk_in.on_falling(self._on_clk_falling)
 
         self._init_buffers()
         self._init_command_state()

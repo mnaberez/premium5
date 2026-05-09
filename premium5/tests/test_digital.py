@@ -1,5 +1,5 @@
 import unittest
-from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Demux, CSI30Demux
+from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Demux
 
 
 class LogicOutputTests(unittest.TestCase):
@@ -32,13 +32,13 @@ class LogicOutputTests(unittest.TestCase):
         out = LogicOutput()
         out.set_high()
         inp = LogicInput()
-        out.bind(inp)
+        out.drives(inp)
         self.assertTrue(inp.high)
 
     def test_state_change_pushes_to_bound_input(self):
         out = LogicOutput()
         inp = LogicInput()
-        out.bind(inp)
+        out.drives(inp)
         out.set_high()
         self.assertTrue(inp.high)
         out.set_low()
@@ -47,10 +47,10 @@ class LogicOutputTests(unittest.TestCase):
     def test_no_push_when_state_unchanged(self):
         out = LogicOutput()
         inp = LogicInput()
-        out.bind(inp)
+        out.drives(inp)
         out.set_high()
         call_count = [0]
-        inp.on_rising = lambda: call_count.__setitem__(0, call_count[0] + 1)
+        inp.on_rising(lambda: call_count.__setitem__(0, call_count[0] + 1))
         out.set_high()  # same state, should not push
         self.assertEqual(call_count[0], 0)
 
@@ -87,7 +87,7 @@ class LogicOutputTests(unittest.TestCase):
     def test_set_level_pushes_to_bound_input(self):
         out = LogicOutput()
         inp = LogicInput()
-        out.bind(inp)
+        out.drives(inp)
         out.set_level(Level.HIGH)
         self.assertTrue(inp.high)
 
@@ -95,8 +95,8 @@ class LogicOutputTests(unittest.TestCase):
         out = LogicOutput()
         inp1 = LogicInput()
         inp2 = LogicInput()
-        out.bind(inp1)
-        out.bind(inp2)
+        out.drives(inp1)
+        out.drives(inp2)
         out.set_high()
         self.assertTrue(inp1.high)
         self.assertTrue(inp2.high)
@@ -104,8 +104,8 @@ class LogicOutputTests(unittest.TestCase):
     def test_bind_same_input_twice_does_not_duplicate(self):
         out = LogicOutput()
         inp = LogicInput()
-        out.bind(inp)
-        out.bind(inp)
+        out.drives(inp)
+        out.drives(inp)
         self.assertEqual(len(out._inputs), 1)
 
     def test_bind_pushes_current_state_to_each(self):
@@ -113,8 +113,8 @@ class LogicOutputTests(unittest.TestCase):
         out.set_high()
         inp1 = LogicInput()
         inp2 = LogicInput()
-        out.bind(inp1)
-        out.bind(inp2)
+        out.drives(inp1)
+        out.drives(inp2)
         self.assertTrue(inp1.high)
         self.assertTrue(inp2.high)
 
@@ -170,8 +170,8 @@ class LogicInputTests(unittest.TestCase):
     def test_set_pull_level_does_not_fire_callbacks(self):
         inp = LogicInput(pull_level=Level.LOW)
         calls = []
-        inp.on_rising = lambda: calls.append('rising')
-        inp.on_falling = lambda: calls.append('falling')
+        inp.on_rising(lambda: calls.append('rising'))
+        inp.on_falling(lambda: calls.append('falling'))
         inp.set_pull_level(Level.HIGH)
         self.assertEqual(calls, [])
 
@@ -184,14 +184,14 @@ class LogicInputTests(unittest.TestCase):
     def test_on_rising_callback(self):
         inp = LogicInput()
         calls = []
-        inp.on_rising = lambda: calls.append('rising')
+        inp.on_rising(lambda: calls.append('rising'))
         inp.notify(Level.HIGH)
         self.assertEqual(calls, ['rising'])
 
     def test_on_falling_callback(self):
         inp = LogicInput(pull_level=Level.HIGH)
         calls = []
-        inp.on_falling = lambda: calls.append('falling')
+        inp.on_falling(lambda: calls.append('falling'))
         inp.notify(Level.LOW)
         self.assertEqual(calls, ['falling'])
 
@@ -199,7 +199,7 @@ class LogicInputTests(unittest.TestCase):
         inp = LogicInput()
         inp.notify(Level.HIGH)
         calls = []
-        inp.on_rising = lambda: calls.append('rising')
+        inp.on_rising(lambda: calls.append('rising'))
         inp.notify(Level.HIGH)
         self.assertEqual(calls, [])
 
@@ -236,10 +236,10 @@ class InverterTests(unittest.TestCase):
         inv = Inverter()
 
         signal = LogicOutput()
-        signal.bind(inv.input)
+        signal.drives(inv.input)
 
         inverted_signal = LogicInput()
-        inv.output.bind(inverted_signal)
+        inv.output.drives(inverted_signal)
 
         signal.set_high()
         self.assertTrue(inverted_signal.low)
@@ -247,12 +247,12 @@ class InverterTests(unittest.TestCase):
         self.assertTrue(inverted_signal.high)
 
 
-class DemuxTests(unittest.TestCase):
+class MuxTests(unittest.TestCase):
 
     def test_default_routes_to_output_a(self):
         mux = Demux()
         signal = LogicOutput(Level.HIGH)
-        signal.bind(mux.input)
+        signal.drives(mux.input)
 
         signal.set_low()
         self.assertTrue(mux.output_a.low)
@@ -264,9 +264,9 @@ class DemuxTests(unittest.TestCase):
     def test_select_low_routes_to_output_a(self):
         mux = Demux()
         select = LogicOutput(Level.LOW)
-        select.bind(mux.select)
+        select.drives(mux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.bind(mux.input)
+        signal.drives(mux.input)
 
         signal.set_low()
         self.assertTrue(mux.output_a.low)
@@ -278,9 +278,9 @@ class DemuxTests(unittest.TestCase):
     def test_select_high_routes_to_output_b(self):
         mux = Demux()
         select = LogicOutput(Level.HIGH)
-        select.bind(mux.select)
+        select.drives(mux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.bind(mux.input)
+        signal.drives(mux.input)
 
         signal.set_low()
         self.assertTrue(mux.output_b.low)
@@ -292,10 +292,10 @@ class DemuxTests(unittest.TestCase):
     def test_select_floating_routes_to_output_a(self):
         mux = Demux()
         select = LogicOutput(Level.FLOATING)
-        select.bind(mux.select)
-        self.assertTrue(mux.select.low)  # pulled down
+        select.drives(mux.select_in)
+        self.assertTrue(mux.select_in.low)  # pulled down
         signal = LogicOutput(Level.HIGH)
-        signal.bind(mux.input)
+        signal.drives(mux.input)
 
         signal.set_low()
         self.assertTrue(mux.output_a.low)
@@ -307,9 +307,9 @@ class DemuxTests(unittest.TestCase):
     def test_switching_pushes_current_levels(self):
         mux = Demux()
         select = LogicOutput(Level.LOW)
-        select.bind(mux.select)
+        select.drives(mux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.bind(mux.input)
+        signal.drives(mux.input)
 
         self.assertTrue(mux.output_a.high)
         self.assertTrue(mux.output_b.floating)
@@ -320,137 +320,3 @@ class DemuxTests(unittest.TestCase):
         self.assertTrue(mux.output_a.floating)
 
 
-class CSI30DemuxTests(unittest.TestCase):
-
-    def test_ctor_routes_to_upd(self):
-        mux = CSI30Demux()
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.LOW)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        csi30_clk_out.set_low()
-        self.assertTrue(mux.clk_to_upd_out.low)
-        csi30_clk_out.set_high()
-        self.assertTrue(mux.clk_to_upd_out.high)
-
-        csi30_dat_out.set_low()
-        self.assertTrue(mux.dat_to_upd_out.low)
-        csi30_dat_out.set_high()
-        self.assertTrue(mux.dat_to_upd_out.high)
-
-        self.assertTrue(mux.clk_to_fis_out.floating)
-        self.assertTrue(mux.dat_to_fis_out.floating)
-
-    def test_p43_floating_routes_to_upd(self):
-        mux = CSI30Demux()
-        p43_out = LogicOutput(Level.FLOATING)
-        p43_out.bind(mux.p43_in)
-        self.assertTrue(mux.p43_in.low)  # pulled down
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.LOW)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        csi30_clk_out.set_low()
-        self.assertTrue(mux.clk_to_upd_out.low)
-        csi30_clk_out.set_high()
-        self.assertTrue(mux.clk_to_upd_out.high)
-
-        csi30_dat_out.set_low()
-        self.assertTrue(mux.dat_to_upd_out.low)
-        csi30_dat_out.set_high()
-        self.assertTrue(mux.dat_to_upd_out.high)
-
-        self.assertTrue(mux.clk_to_fis_out.floating)
-        self.assertTrue(mux.dat_to_fis_out.floating)
-
-    def test_p43_going_low_routes_to_upd(self):
-        mux = CSI30Demux()
-        p43_out = LogicOutput(Level.LOW)
-        p43_out.bind(mux.p43_in)
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.LOW)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        csi30_clk_out.set_low()
-        self.assertTrue(mux.clk_to_upd_out.low)
-        csi30_clk_out.set_high()
-        self.assertTrue(mux.clk_to_upd_out.high)
-
-        csi30_dat_out.set_low()
-        self.assertTrue(mux.dat_to_upd_out.low)
-        csi30_dat_out.set_high()
-        self.assertTrue(mux.dat_to_upd_out.high)
-
-        self.assertTrue(mux.clk_to_fis_out.floating)
-        self.assertTrue(mux.dat_to_fis_out.floating)
-
-    def test_p43_going_high_routes_to_fis(self):
-        mux = CSI30Demux()
-        p43_out = LogicOutput(Level.HIGH)
-        p43_out.bind(mux.p43_in)
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.LOW)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        csi30_clk_out.set_low()
-        self.assertTrue(mux.clk_to_fis_out.low)
-        csi30_clk_out.set_high()
-        self.assertTrue(mux.clk_to_fis_out.high)
-
-        csi30_dat_out.set_low()
-        self.assertTrue(mux.dat_to_fis_out.low)
-        csi30_dat_out.set_high()
-        self.assertTrue(mux.dat_to_fis_out.high)
-
-        self.assertTrue(mux.clk_to_upd_out.floating)
-        self.assertTrue(mux.dat_to_upd_out.floating)
-
-    def test_switching_to_fis_pushes_current_levels(self):
-        mux = CSI30Demux()
-        p43_out = LogicOutput(Level.LOW)
-        p43_out.bind(mux.p43_in)
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.HIGH)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        # CLK and DAT are both HIGH, routed to UPD
-        self.assertTrue(mux.clk_to_upd_out.high)
-        self.assertTrue(mux.dat_to_upd_out.high)
-        self.assertTrue(mux.clk_to_fis_out.floating)
-        self.assertTrue(mux.dat_to_fis_out.floating)
-
-        # switch to FIS — no edges, just the switch
-        p43_out.set_high()
-
-        # FIS side should see the current levels immediately
-        self.assertTrue(mux.clk_to_fis_out.high)
-        self.assertTrue(mux.dat_to_fis_out.high)
-        self.assertTrue(mux.clk_to_upd_out.floating)
-        self.assertTrue(mux.dat_to_upd_out.floating)
-
-    def test_switching_to_upd_pushes_current_levels(self):
-        mux = CSI30Demux()
-        p43_out = LogicOutput(Level.HIGH)
-        p43_out.bind(mux.p43_in)
-        csi30_clk_out = LogicOutput(Level.HIGH)
-        csi30_clk_out.bind(mux.clk_from_csi30_in)
-        csi30_dat_out = LogicOutput(Level.LOW)
-        csi30_dat_out.bind(mux.dat_from_csi30_in)
-
-        # CLK HIGH, DAT LOW, routed to FIS
-        self.assertTrue(mux.clk_to_fis_out.high)
-        self.assertTrue(mux.dat_to_fis_out.low)
-
-        # switch to UPD — no edges, just the switch
-        p43_out.set_low()
-
-        # UPD side should see the current levels immediately
-        self.assertTrue(mux.clk_to_upd_out.high)
-        self.assertTrue(mux.dat_to_upd_out.low)
-        self.assertTrue(mux.clk_to_fis_out.floating)
-        self.assertTrue(mux.dat_to_fis_out.floating)

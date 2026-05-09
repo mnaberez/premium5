@@ -86,8 +86,8 @@ class _PortDevicePin(object):
         self.input = LogicInput()
 
         # callbacks
-        self.on_rising  = self._no_callback
-        self.on_falling = self._no_callback
+        self._on_rising  = self._no_callback
+        self._on_falling = self._no_callback
 
         # internal state
         self._mode = self.INPUT
@@ -95,8 +95,8 @@ class _PortDevicePin(object):
         self._last_high = self.high
 
         # internal callbacks: logic input notifies us of its edges
-        self.input.on_rising  = self._on_input_edge
-        self.input.on_falling = self._on_input_edge
+        self.input.on_rising(self._on_input_edge)
+        self.input.on_falling(self._on_input_edge)
 
     def set_mode(self, mode):
         self._mode = mode
@@ -138,9 +138,17 @@ class _PortDevicePin(object):
         if current != self._last_high:
             self._last_high = current
             if current:
-                self.on_rising()
+                self._on_rising()
             else:
-                self.on_falling()
+                self._on_falling()
+
+    def on_rising(self, callback):
+        self._on_rising = callback
+        return self
+
+    def on_falling(self, callback):
+        self._on_falling = callback
+        return self
 
     def _update(self):
         if self._mode == self.INPUT:
@@ -177,8 +185,8 @@ class Port0Device(PortDevice):
         self._egn = 0x00
         for i in range(8):
             idx = i
-            self.pins[idx].on_rising = lambda idx=idx: self._on_pin_rising(idx)
-            self.pins[idx].on_falling = lambda idx=idx: self._on_pin_falling(idx)
+            self.pins[idx].on_rising(lambda idx=idx: self._on_pin_rising(idx))
+            self.pins[idx].on_falling(lambda idx=idx: self._on_pin_falling(idx))
 
     def reset(self):
         super().reset()
@@ -369,20 +377,22 @@ class SPIControllerDevice(BaseDevice):
 
         # clock multiplexer: switches between internal and external clock
         mux = Mux()
-        self._internal_clk_out.bind(mux.input_a)
-        self.clk_in.as_output().bind(mux.input_b)
+        self._internal_clk_out.drives(mux.input_a)
+        self._ext_clk_to_mux = mux.input_b.driver()
+        self.clk_in.on_rising(self._ext_clk_to_mux.set_high)
+        self.clk_in.on_falling(self._ext_clk_to_mux.set_low)
 
         # control output to multiplexer: low=internal, high=external clock
         self._clk_select_out = LogicOutput(Level.LOW)
-        self._clk_select_out.bind(mux.select)
+        self._clk_select_out.drives(mux.select_in)
 
         # state must be initialized before wiring callbacks
         self._init_state()
 
         # callbacks that fire when selected clock changes
-        sck_in = mux.output.as_input()
-        sck_in.on_falling = self._on_clk_falling
-        sck_in.on_rising  = self._on_clk_rising
+        sck_in = mux.output.follower()
+        sck_in.on_falling(self._on_clk_falling)
+        sck_in.on_rising(self._on_clk_rising)
 
         self.reset()
 
@@ -563,7 +573,7 @@ class UARTDevice(BaseDevice):
 
         # receiver
         self._rx = AsyncSerialReceiver(self.rxd_in, self._on_rx_complete)
-        self.rxd_in.on_falling = self._rx._on_rxd_falling
+        self.rxd_in.on_falling(self._rx._on_rxd_falling)
 
         self.reset()
 

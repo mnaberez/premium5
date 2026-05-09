@@ -159,12 +159,12 @@ class SPIControllerDeviceTests(unittest.TestCase):
         # must see the correct data bit at the moment the edge fires.
         # This is how FIS and UPD16432B receive data from CSI30.
         clk_monitor = LogicInput()
-        self.spi.clk_out.bind(clk_monitor)
+        self.spi.clk_out.drives(clk_monitor)
 
         bits = []
         def on_clk_falling():
             bits.append(int(self.spi.dat_out.high))
-        clk_monitor.on_falling = on_clk_falling
+        clk_monitor.on_falling(on_clk_falling)
 
         self._enable()
         self.spi.write(self.spi.SIO, 0xA5)  # 10100101
@@ -175,7 +175,7 @@ class SPIControllerDeviceTests(unittest.TestCase):
 
     def test_shifts_in_dat_on_rising_edge(self):
         driver = LogicOutput(Level.LOW)
-        driver.bind(self.spi.dat_in)
+        driver.drives(self.spi.dat_in)
 
         self._enable()
         self.spi.write(self.spi.SIO, 0x00)
@@ -297,7 +297,7 @@ class SPIControllerDeviceTests(unittest.TestCase):
 
     def test_receive_only_mode_shifts_in_data(self):
         driver = LogicOutput(Level.LOW)
-        driver.bind(self.spi.dat_in)
+        driver.drives(self.spi.dat_in)
 
         self.spi.write(self.spi.CSIM, 0x85)  # MODE=1, SCL=01 (fX/8)
         self.spi.read(self.spi.SIO)  # trigger transfer
@@ -326,8 +326,8 @@ class SPIControllerDeviceTests(unittest.TestCase):
     def test_external_clock_shifts_in_data(self):
         ext_clk = LogicOutput(Level.HIGH)
         ext_dat = LogicOutput(Level.LOW)
-        ext_clk.bind(self.spi.clk_in)
-        ext_dat.bind(self.spi.dat_in)
+        ext_clk.drives(self.spi.clk_in)
+        ext_dat.drives(self.spi.dat_in)
 
         # SCL=00, MODE=1 (receive-only): 0x84
         self.spi.write(self.spi.CSIM, 0x84)
@@ -347,7 +347,7 @@ class SPIControllerDeviceTests(unittest.TestCase):
 
     def test_external_clock_fires_interrupt_after_8_bits(self):
         ext_clk = LogicOutput(Level.HIGH)
-        ext_clk.bind(self.spi.clk_in)
+        ext_clk.drives(self.spi.clk_in)
 
         # SCL=00, MODE=1 (receive-only): 0x84
         self.spi.write(self.spi.CSIM, 0x84)
@@ -364,8 +364,8 @@ class SPIControllerDeviceTests(unittest.TestCase):
     def test_external_clock_receives_multiple_bytes(self):
         ext_clk = LogicOutput(Level.HIGH)
         ext_dat = LogicOutput(Level.LOW)
-        ext_clk.bind(self.spi.clk_in)
-        ext_dat.bind(self.spi.dat_in)
+        ext_clk.drives(self.spi.clk_in)
+        ext_dat.drives(self.spi.dat_in)
 
         # SCL=00, MODE=1 (receive-only): 0x84
         self.spi.write(self.spi.CSIM, 0x84)
@@ -392,7 +392,7 @@ class SPIControllerDeviceTests(unittest.TestCase):
 
     def test_external_clock_shifts_out_data(self):
         ext_clk = LogicOutput(Level.HIGH)
-        ext_clk.bind(self.spi.clk_in)
+        ext_clk.drives(self.spi.clk_in)
 
         # SCL=00, MODE=0 (transmit): 0x80
         self.spi.write(self.spi.CSIM, 0x80)
@@ -656,7 +656,7 @@ class UARTDeviceTests(unittest.TestCase):
 
     def test_reset_clears_asis0(self):
         self.uart.write(self.uart.ASIM0, 0xC8)
-        self.uart.txd_out.bind(self.uart.rxd_in)
+        self.uart.txd_out.drives(self.uart.rxd_in)
         self.uart.write(self.uart.TXS0_RXB0, 0x55)
         self.uart.tick(5000)
         self.uart.write(self.uart.TXS0_RXB0, 0xAA)
@@ -666,7 +666,7 @@ class UARTDeviceTests(unittest.TestCase):
 
     def test_reset_restores_rxb0_to_ff(self):
         self.uart.write(self.uart.ASIM0, 0xC8)
-        self.uart.txd_out.bind(self.uart.rxd_in)
+        self.uart.txd_out.drives(self.uart.rxd_in)
         self.uart.write(self.uart.TXS0_RXB0, 0x55)
         self.uart.tick(5000)
         self.uart.reset()
@@ -829,7 +829,7 @@ class UARTReceiverTests(unittest.TestCase):
     def setUp(self):
         self.rxd_driver = LogicOutput(Level.HIGH)
         rxd_input = LogicInput(pull_level=Level.HIGH)
-        self.rxd_driver.bind(rxd_input)
+        self.rxd_driver.drives(rxd_input)
 
         self.completions = []
         self.errors = []
@@ -841,7 +841,7 @@ class UARTReceiverTests(unittest.TestCase):
 
         self.rx = AsyncSerialReceiver(rxd_input, on_complete)
         self.rx.configure_brg(400)
-        rxd_input.on_falling = self.rx._on_rxd_falling
+        rxd_input.on_falling(self.rx._on_rxd_falling)
         self.rx.enable()
 
     def _drive_bits(self, bits):
@@ -974,7 +974,7 @@ class UARTLoopbackTests(unittest.TestCase):
         self.uart = UARTDevice("uart0")
         self.uart.bus = self
         self.interrupts = []
-        self.uart.txd_out.bind(self.uart.rxd_in)
+        self.uart.txd_out.drives(self.uart.rxd_in)
         self.uart.write(self.uart.BRGC0, 0x39)
 
     def interrupt(self, device, int_num):
@@ -1056,7 +1056,7 @@ class UARTLoopbackTests(unittest.TestCase):
 
         # drive rxd_in externally instead of loopback
         rxd_driver = LogicOutput(Level.HIGH)
-        rxd_driver.bind(self.uart.rxd_in)
+        rxd_driver.drives(self.uart.rxd_in)
 
         # glitch: falling edge triggers start bit detection,
         # but line goes high before mid-bit sample

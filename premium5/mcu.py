@@ -1,9 +1,9 @@
 from k0emu.devices import (MemoryDevice, RegisterFileDevice,
                            ProcessorStatusDevice,
-                           ADCDevice, I2CControllerDevice,
+                           ADCDevice, FreeRunningTimerDevice,
+                           I2CControllerDevice,
                            InterruptControllerDevice,
-                           WatchdogDevice, WatchTimerDevice,
-                           FreeRunningTimerDevice)
+                           WatchdogDevice, WatchTimerDevice)
 from k0emu.processor import Processor
 from premium5.devices import (Port0Device, Port2Device, Port3Device,
                               Port4Device, Port5Device, Port6Device,
@@ -51,13 +51,13 @@ class UPD78F0831Y:
         self.p9 = None
 
         # Multiplexed pins: CSI30 muxed with GPIO
-        self.p31_so30 = None   # P3.1/SO30 output  (CSI30/P3 muxed)
-        self.p32_sck30 = None  # P3.2/SCK30 output (CSI30/P3 muxed)
-        self.p30_si30 = None   # P3.0/SI30 input   (CSI30/P3 muxed)
+        self.p31_so30_out = None   # P3.1/SO30 output  (CSI30/P3 muxed)
+        self.p32_sck30_out = None  # P3.2/SCK30 output (CSI30/P3 muxed)
+        self.p30_si30_in = None    # P3.0/SI30 input   (CSI30/P3 muxed)
 
         # Multiplexed pins: UART0 muxed with GPIO
-        self.p25_txd0 = None   # P2.5/TxD0 output (UART0/P2 muxed)
-        self.p24_rxd0 = None   # P2.4/RxD0 input  (UART0/P2 muxed)
+        self.p25_txd0_out = None   # P2.5/TxD0 output (UART0/P2 muxed)
+        self.p24_rxd0_in = None    # P2.4/RxD0 input  (UART0/P2 muxed)
 
     def _init_memories(self):
         bus = self.proc.bus
@@ -130,27 +130,23 @@ class UPD78F0831Y:
 
         # P3.1/SO30: mux between GPIO and SPI data out
         self._so30_mux = Mux()
-        self.p3.pins[1].output.bind(self._so30_mux.input_a)
-        self._csi30.dat_out.bind(self._so30_mux.input_b)
-        self._csi30.enabled_out.bind(self._so30_mux.select)
+        self.p3.pins[1].output.drives(self._so30_mux.input_a)
+        self._csi30.dat_out.drives(self._so30_mux.input_b)
+        self._csi30.enabled_out.drives(self._so30_mux.select_in)
 
         # P3.2/SCK30: mux between GPIO and SPI clock out
         self._sck30_mux = Mux()
-        self.p3.pins[2].output.bind(self._sck30_mux.input_a)
-        self._csi30.clk_out.bind(self._sck30_mux.input_b)
-        self._csi30.enabled_out.bind(self._sck30_mux.select)
+        self.p3.pins[2].output.drives(self._sck30_mux.input_a)
+        self._csi30.clk_out.drives(self._sck30_mux.input_b)
+        self._csi30.enabled_out.drives(self._sck30_mux.select_in)
 
         # Package pins
-        self.p31_so30 = self._so30_mux.output
-        self.p32_sck30 = self._sck30_mux.output
+        self.p31_so30_out = self._so30_mux.output
+        self.p32_sck30_out = self._sck30_mux.output
 
         # P3.0/SI30: fanout to both GPIO and SPI
-        self.p30_si30 = LogicInput()
-        self._si30_fanout = LogicOutput()
-        self._si30_fanout.bind(self.p3.pins[0].input)
-        self._si30_fanout.bind(self._csi30.dat_in)
-        self.p30_si30.on_rising = self._si30_fanout.set_high
-        self.p30_si30.on_falling = self._si30_fanout.set_low
+        self.p30_si30_in = LogicInput()
+        self.p30_si30_in.monitor().drives(self.p3.pins[0].input).drives(self._csi30.dat_in)
 
     def _init_csi31(self):
         # TODO: CSI31 (CDC) not mapped — no CD changer connected.
@@ -172,18 +168,14 @@ class UPD78F0831Y:
 
         # P2.5/TxD0: mux between GPIO and UART data out
         self._txd0_mux = Mux()
-        self.p2.pins[5].output.bind(self._txd0_mux.input_a)
-        self._uart0.txd_out.bind(self._txd0_mux.input_b)
-        self._uart0.tx_enabled_out.bind(self._txd0_mux.select)
-        self.p25_txd0 = self._txd0_mux.output
+        self.p2.pins[5].output.drives(self._txd0_mux.input_a)
+        self._uart0.txd_out.drives(self._txd0_mux.input_b)
+        self._uart0.tx_enabled_out.drives(self._txd0_mux.select_in)
+        self.p25_txd0_out = self._txd0_mux.output
 
         # P2.4/RxD0: fanout to both GPIO and UART
-        self.p24_rxd0 = LogicInput()
-        self._rxd0_fanout = LogicOutput()
-        self._rxd0_fanout.bind(self.p2.pins[4].input)
-        self._rxd0_fanout.bind(self._uart0.rxd_in)
-        self.p24_rxd0.on_rising = self._rxd0_fanout.set_high
-        self.p24_rxd0.on_falling = self._rxd0_fanout.set_low
+        self.p24_rxd0_in = LogicInput()
+        self.p24_rxd0_in.monitor().drives(self.p2.pins[4].input).drives(self._uart0.rxd_in)
 
     def _init_i2c(self):
         bus = self.proc.bus

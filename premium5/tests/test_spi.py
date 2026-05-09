@@ -8,17 +8,17 @@ def _make_upd():
     upd = UPD16432B()
 
     stb = LogicOutput()
-    stb.bind(upd.stb_in)
+    stb.drives(upd.stb_in)
 
     clk = LogicOutput()
     clk.set_high()
-    clk.bind(upd.clk_in)
+    clk.drives(upd.clk_in)
 
     dat = LogicOutput()
-    dat.bind(upd.dat_in)
+    dat.drives(upd.dat_in)
 
     dat_read = LogicInput(pull_level=Level.LOW)
-    upd.dat_out.bind(dat_read)
+    upd.dat_out.drives(dat_read)
 
     return upd, stb, clk, dat, dat_read
 

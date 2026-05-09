@@ -32,8 +32,8 @@ class AsyncSerialTransmitter:
 
         self._brg = BaudRateGenerator()
         self._brg_clk_in = LogicInput()
-        self._brg.baud_clk_out.bind(self._brg_clk_in)
-        self._brg_clk_in.on_rising = self._on_baud_clk_rising
+        self._brg.baud_clk_out.drives(self._brg_clk_in)
+        self._brg_clk_in.on_rising(self._on_baud_clk_rising)
 
         self.reset()
 
@@ -150,8 +150,8 @@ class AsyncSerialReceiver:
 
         self._brg = BaudRateGenerator()
         self._brg_clk_in = LogicInput()
-        self._brg.baud_clk_out.bind(self._brg_clk_in)
-        self._brg_clk_in.on_rising = self._on_baud_clk_rising
+        self._brg.baud_clk_out.drives(self._brg_clk_in)
+        self._brg_clk_in.on_rising(self._on_baud_clk_rising)
 
         self.reset()
 

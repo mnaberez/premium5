@@ -12,9 +12,9 @@ class FISReceiverTestCase(unittest.TestCase):
         self.clk = LogicOutput(Level.HIGH)   # CPOL=1: idles HIGH
         self.dat = LogicOutput(Level.HIGH)
         self.ena = LogicOutput(Level.LOW)    # ENA idles LOW
-        self.clk.bind(self.fis.clk_in)
-        self.dat.bind(self.fis.dat_in)
-        self.ena.bind(self.fis.ena_in)
+        self.clk.drives(self.fis.clk_in)
+        self.dat.drives(self.fis.dat_in)
+        self.ena.drives(self.fis.ena_in)
 
     def _radio_text_packet(self):
         """A well-formed 0x81 radio text packet: "FM1 1   " / " 93.5MHZ" """

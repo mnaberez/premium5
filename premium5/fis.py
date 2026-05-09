@@ -48,8 +48,8 @@ class FISReceiver:
         MSB first, 8 bits per transfer
 
     CLK/DAT could in theory be directly connected to the radio's SPI controller
-    CSI30.  In practice, they need to be connected through a transparent mux
-    (CSI30Demux) because CSI30 is also used to drive the uPD16432B.
+    CSI30.  In practice, they need to be connected through a transparent switch
+    (Demux) because CSI30 is also used to drive the uPD16432B.
 
     This receiver handles the wire protocol only: SPI bit shifting, ENA
     handshake timing, packet assembly, and checksum validation.  When a
@@ -92,9 +92,9 @@ class FISReceiver:
         self._bytes_expected = 0
 
         # callbacks
-        self.clk_in.on_falling = self._on_clk_falling
-        self.ena_in.on_rising = self._on_ena_rising
-        self.ena_in.on_falling = self._on_ena_falling
+        self.clk_in.on_falling(self._on_clk_falling)
+        self.ena_in.on_rising(self._on_ena_rising)
+        self.ena_in.on_falling(self._on_ena_falling)
 
     def tick_1mhz(self, cycles=1):
         if self._countdown > 0:
