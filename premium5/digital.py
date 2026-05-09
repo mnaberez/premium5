@@ -167,12 +167,6 @@ class LogicInput(object):
         self._on_floating = callback
         return self
 
-    def driver(self):
-        """Build a LogicOutput that drives this input."""
-        out = LogicOutput(self._resolved_level)
-        out.drives(self)
-        return out
-
     def monitor(self):
         """Build a LogicOutput that mirrors this input's level."""
         out = LogicOutput(self._resolved_level)
@@ -180,6 +174,20 @@ class LogicInput(object):
         self.on_falling(out.set_low)
         self.on_floating(out.set_floating)
         return out
+
+    def driver(self, *args, **kwargs):
+        """Build a LogicOutput that drives this input."""
+        out = LogicOutput(*args, **kwargs)
+        out.drives(self)
+        return out
+
+    def stuck(self, level):
+        """
+        Build a LogicOutput to drive this input always at a
+        fixed level.  Used to convey that an input should always
+        be fed that level.  The returned driver's level can 
+        actually be changed later but you shouldn't do that."""
+        return self.driver(level)
 
 
 class Inverter(object):

@@ -306,11 +306,39 @@ class LogicInputTests(unittest.TestCase):
         drv.set_low()
         self.assertTrue(inp.low)
 
-    def test_driver_starts_at_current_level(self):
-        inp = LogicInput(pull_level=Level.HIGH)
+    def test_driver_defaults_to_floating(self):
+        inp = LogicInput()
 
         drv = inp.driver()
+        self.assertTrue(drv.floating)
+
+    def test_driver_accepts_initial_level(self):
+        inp = LogicInput()
+
+        drv = inp.driver(Level.HIGH)
         self.assertTrue(drv.high)
+        self.assertTrue(inp.high)
+
+    def test_stuck_returns_logic_output(self):
+        inp = LogicInput()
+
+        drv = inp.stuck(Level.HIGH)
+        self.assertIsInstance(drv, LogicOutput)
+
+    def test_stuck_sets_level(self):
+        inp = LogicInput()
+
+        inp.stuck(Level.HIGH)
+        self.assertTrue(inp.high)
+
+    def test_stuck_driver_can_change_level(self):
+        inp = LogicInput()
+
+        drv = inp.stuck(Level.HIGH)
+        self.assertTrue(inp.high)
+
+        drv.set_low()
+        self.assertTrue(inp.low)
 
     def test_monitor_returns_logic_output(self):
         inp = LogicInput()

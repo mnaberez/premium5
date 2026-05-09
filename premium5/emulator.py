@@ -45,22 +45,17 @@ class Emulator:
         with open(rom_path, 'rb') as f:
             self.proc.bus.device("rom").load(0, f.read())
         populate(self.proc)
+
         self.proc.bus.reset()
         self.upd = machine.upd
         self.fis = machine.fis
-
-        self._p3 = mcu.p3
-
         self.mfsw = machine.mfsw
 
-        self._power_key = LogicOutput(Level.HIGH)
-        self._power_key.drives(mcu.p0.pins[4].input)
+        self._alarm_led = mcu.p3.pins[3]
 
-        self._stop_eject_key = LogicOutput(Level.HIGH)
-        self._stop_eject_key.drives(mcu.p0.pins[6].input)
-
-        self._p02_driver = LogicOutput(Level.HIGH)
-        self._p02_driver.drives(mcu.p0.pins[2].input)
+        self._power_key = mcu.p0.pins[4].input.driver(Level.HIGH)
+        self._stop_eject_key = mcu.p0.pins[6].input.driver(Level.HIGH)
+        self._p02_driver = mcu.p0.pins[2].input.driver(Level.HIGH)
 
         self.governor = Governor(self.SYSTEM_CLOCK_HZ)
         self.reference_tick = ReferenceTick(self.SYSTEM_CLOCK_HZ)
@@ -88,7 +83,7 @@ class Emulator:
 
         display_pixels = bytes(self.upd.display_pixels).hex()
         pictograph_ram = bytes(self.upd.pictograph_ram).hex()
-        led = self._p3.pins[3].low  # led is active low
+        led = self._alarm_led.low  # active low
 
         exp_ram = proc.bus.device("expansion_ram")._data
         hs_ram = proc.bus.device("high_speed_ram")._data

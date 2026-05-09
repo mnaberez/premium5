@@ -21,12 +21,10 @@ class Machine:
     def _init_pin_drivers(self):
         # P0.1/INTP1: firmware checks this pin during power-on.
         # Must be HIGH or the power-on sequence fails.
-        self._p01_driver = LogicOutput(Level.HIGH)
-        self._p01_driver.drives(self.mcu.p0.pins[1].input)
+        self.mcu.p0.pins[1].input.stuck(Level.HIGH)
 
         # P9.0 = S-Contact (ignition). Drive LOW = ignition off.
-        self._s_contact = LogicOutput(Level.LOW)
-        self._s_contact.drives(self.mcu.p9.pins[0].input)
+        self.mcu.p9.pins[0].input.stuck(Level.LOW)
 
     def _init_i2c_targets(self):
         i2c = self.mcu.proc.bus.device("iic0")
