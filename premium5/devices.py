@@ -3,6 +3,64 @@ from premium5.digital import LogicInput, LogicOutput, Level, Mux
 from premium5.serial import AsyncSerialTransmitter, AsyncSerialReceiver, Parity
 
 
+class CompareMatchTimerDevice(BaseDevice):
+    """16-bit free-running timer with compare interrupt
+
+    Consists of a free-running 16-bit counter (TM01) and a compare
+    register (CR011).  Interrupt INTTM011 fires when the counter
+    reaches the compare value.
+
+    uPD78F0833Y subseries manual, Chapter 7:
+        TM01 (FF14-FF15): 16-bit free-running timer counter (read-only)
+        CR011 (FF12-FF13): 16-bit capture/compare register 011
+
+    Bus mapping:
+        register 0: CR011 low byte   (FF12)
+        register 1: CR011 high byte  (FF13)
+        register 2: TM01 low byte    (FF14, read-only)
+        register 3: TM01 high byte   (FF15, read-only)
+    """
+
+    CR_LO = 0
+    CR_HI = 1
+    TM_LO = 2
+    TM_HI = 3
+
+    INT_COMPARE = 0
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.size = 4
+        self._counter = 0   # TM01 free-running counter
+        self._compare = 0   # CR011 compare register
+
+    def read(self, register):
+        self._check_bounds(register)
+
+        if register == self.CR_LO:
+            return self._compare & 0xFF
+        elif register == self.CR_HI:
+            return (self._compare >> 8) & 0xFF
+        elif register == self.TM_LO:
+            return self._counter & 0xFF
+        else:
+            return (self._counter >> 8) & 0xFF
+
+    def write(self, register, value):
+        self._check_bounds(register)
+
+        if register == self.CR_LO:
+            self._compare = (self._compare & 0xFF00) | value
+        elif register == self.CR_HI:
+            self._compare = (self._compare & 0x00FF) | (value << 8)
+
+    def tick(self, cycles):
+        for _ in range(cycles):
+            self._counter = (self._counter + 1) & 0xFFFF
+            if self._counter == self._compare:
+                self.bus.interrupt(self, self.INT_COMPARE)
+
+
 class PortDevice(BaseDevice):
     """GPIO port with 8 configurable pins
     """

@@ -1,13 +1,13 @@
 from k0emu.devices import (MemoryDevice, RegisterFileDevice,
                            ProcessorStatusDevice,
-                           ADCDevice, FreeRunningTimerDevice,
-                           I2CControllerDevice,
+                           ADCDevice, I2CControllerDevice,
                            InterruptControllerDevice,
                            WatchdogDevice, WatchTimerDevice)
 from k0emu.processor import Processor
-from premium5.devices import (Port0Device, Port2Device, Port3Device,
-                              Port4Device, Port5Device, Port6Device,
-                              Port7Device, Port8Device, Port9Device)
+from premium5.devices import (CompareMatchTimerDevice, Port0Device,
+                              Port2Device, Port3Device, Port4Device,
+                              Port5Device, Port6Device, Port7Device,
+                              Port8Device, Port9Device)
 from premium5.devices import SPIControllerDevice, UARTDevice
 from premium5.digital import Mux, LogicInput, LogicOutput
 
@@ -187,8 +187,9 @@ class UPD78F0831Y:
     def _init_timers(self):
         bus = self.proc.bus
 
-        tm01 = FreeRunningTimerDevice("tm01")
-        bus.add_device(tm01, (0xFF14, 0xFF15))
+        tm01_cr011 = CompareMatchTimerDevice("tm01_cr011")
+        bus.add_device(tm01_cr011, (0xFF12, 0xFF15))
+        self._intc.connect(tm01_cr011, tm01_cr011.INT_COMPARE, self._intc.INTTM011)
 
         adc = ADCDevice("adc", result=0x8C)  # 14.0V typical car battery
         bus.add_device(adc, (0xFF17, 0xFF17), (0xFF80, 0xFF81))

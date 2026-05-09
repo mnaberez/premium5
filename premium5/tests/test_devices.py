@@ -1,7 +1,169 @@
 import unittest
-from premium5.devices import Port0Device, Port9Device, SPIControllerDevice, UARTDevice
+from premium5.devices import (CompareMatchTimerDevice,
+                              Port0Device, Port9Device, SPIControllerDevice,
+                              UARTDevice)
 from premium5.digital import LogicInput, LogicOutput, Level
 from premium5.serial import AsyncSerialReceiver, BaudRateGenerator, Parity
+
+
+class CompareMatchTimerDeviceTests(unittest.TestCase):
+
+    def setUp(self):
+        self.timer = CompareMatchTimerDevice("tm01_cr011")
+        self.timer.bus = self
+        self.interrupts = []
+
+    def interrupt(self, device, int_num):
+        self.interrupts.append((device, int_num))
+
+    # counter: initial state
+
+    def test_counter_starts_at_zero(self):
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 0x00)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0x00)
+
+    # counter: counting
+
+    def test_counter_increments_by_cycles(self):
+        self.timer.tick(100)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 100)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0)
+
+    def test_counter_increments_across_multiple_ticks(self):
+        self.timer.tick(100)
+        self.timer.tick(50)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 150)
+
+    def test_counter_high_byte(self):
+        self.timer.tick(0x1234)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 0x34)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0x12)
+
+    # counter: wrapping
+
+    def test_counter_wraps_at_0xFFFF(self):
+        self.timer.tick(0xFFFF)
+        self.timer.tick(1)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 0x00)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0x00)
+
+    def test_counter_wraps_past_0xFFFF(self):
+        self.timer.tick(0xFFFF)
+        self.timer.tick(3)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 0x02)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0x00)
+
+    # counter: read-only
+
+    def test_counter_is_read_only(self):
+        self.timer.write(self.timer.TM_LO, 0xFF)
+        self.timer.write(self.timer.TM_HI, 0xFF)
+        self.assertEqual(self.timer.read(self.timer.TM_LO), 0x00)
+        self.assertEqual(self.timer.read(self.timer.TM_HI), 0x00)
+
+    # compare register: initial state
+
+    def test_compare_starts_at_zero(self):
+        self.assertEqual(self.timer.read(self.timer.CR_LO), 0x00)
+        self.assertEqual(self.timer.read(self.timer.CR_HI), 0x00)
+
+    # compare register: read/write
+
+    def test_write_and_read_compare_low(self):
+        self.timer.write(self.timer.CR_LO, 0xAB)
+        self.assertEqual(self.timer.read(self.timer.CR_LO), 0xAB)
+        self.assertEqual(self.timer.read(self.timer.CR_HI), 0x00)
+
+    def test_write_and_read_compare_high(self):
+        self.timer.write(self.timer.CR_HI, 0xCD)
+        self.assertEqual(self.timer.read(self.timer.CR_LO), 0x00)
+        self.assertEqual(self.timer.read(self.timer.CR_HI), 0xCD)
+
+    def test_write_and_read_compare_word(self):
+        self.timer.write(self.timer.CR_LO, 0x34)
+        self.timer.write(self.timer.CR_HI, 0x12)
+        self.assertEqual(self.timer.read(self.timer.CR_LO), 0x34)
+        self.assertEqual(self.timer.read(self.timer.CR_HI), 0x12)
+
+    # compare match: basic
+
+    def test_no_interrupt_before_compare_reached(self):
+        self.timer.write(self.timer.CR_LO, 100)
+        self.timer.tick(99)
+        self.assertEqual(self.interrupts, [])
+
+    def test_interrupt_when_counter_reaches_compare(self):
+        self.timer.write(self.timer.CR_LO, 100)
+        self.timer.tick(100)
+        self.assertEqual(len(self.interrupts), 1)
+        self.assertEqual(self.interrupts[0][1], self.timer.INT_COMPARE)
+
+    def test_interrupt_when_counter_passes_compare(self):
+        self.timer.write(self.timer.CR_LO, 100)
+        self.timer.tick(200)
+        self.assertEqual(len(self.interrupts), 1)
+
+    # compare match: does not re-fire when sitting on compare value
+
+    def test_no_repeat_interrupt_when_sitting_on_compare(self):
+        self.timer.write(self.timer.CR_LO, 100)
+        self.timer.tick(100)  # counter reaches 100, fires
+        self.assertEqual(len(self.interrupts), 1)
+        self.timer.tick(1)    # counter is now 101, was at 100
+        self.assertEqual(len(self.interrupts), 1)
+
+    # compare match: fires again after full wrap
+
+    def test_fires_again_after_counter_wraps_around(self):
+        self.timer.write(self.timer.CR_LO, 100)
+        self.timer.tick(100)  # fires at 100
+        self.assertEqual(len(self.interrupts), 1)
+        self.timer.tick(0xFFFF)  # advance almost a full wrap
+        self.assertEqual(len(self.interrupts), 1)
+        self.timer.tick(1)  # now passes 100 again
+        self.assertEqual(len(self.interrupts), 2)
+
+    # compare match: wrapping
+
+    def test_interrupt_when_counter_wraps_past_compare(self):
+        self.timer.write(self.timer.CR_LO, 0x05)
+        self.timer.tick(0x05)    # fires at 5, counter now at 5
+        self.interrupts.clear()
+        self.timer.tick(0xFFEB)  # counter at 0xFFF0, no second crossing
+        self.assertEqual(self.interrupts, [])
+        self.timer.tick(0x20)    # counter wraps to 0x0010, passing 0x0005
+        self.assertEqual(len(self.interrupts), 1)
+
+    def test_no_interrupt_when_compare_is_behind_and_no_wrap(self):
+        self.timer.write(self.timer.CR_LO, 50)
+        self.timer.tick(100)  # fires when reaching 50
+        self.interrupts.clear()
+        self.timer.tick(100)  # counter at 200, compare at 50, no wrap
+        self.assertEqual(self.interrupts, [])
+
+    # compare match: 16-bit compare value
+
+    def test_interrupt_with_16_bit_compare_value(self):
+        self.timer.write(self.timer.CR_LO, 0x00)
+        self.timer.write(self.timer.CR_HI, 0x80)  # compare = 0x8000
+        self.timer.tick(0x7FFF)
+        self.assertEqual(self.interrupts, [])
+        self.timer.tick(1)  # counter reaches 0x8000
+        self.assertEqual(len(self.interrupts), 1)
+
+    # compare match: compare value changed after counter started
+
+    def test_interrupt_after_compare_changed_ahead_of_counter(self):
+        self.timer.tick(100)  # counter at 100
+        self.timer.write(self.timer.CR_LO, 200)  # set compare ahead
+        self.timer.tick(100)  # counter reaches 200
+        self.assertEqual(len(self.interrupts), 1)
+
+    def test_no_interrupt_after_compare_changed_behind_counter(self):
+        self.timer.tick(100)  # counter at 100
+        self.timer.write(self.timer.CR_LO, 50)  # set compare behind
+        self.timer.tick(100)  # counter at 200, no wrap past 50
+        self.assertEqual(self.interrupts, [])
 
 
 class Port0DeviceTests(unittest.TestCase):
