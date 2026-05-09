@@ -12,10 +12,11 @@ class LogicOutput(object):
         self._level = level
         self._inputs = []
 
-    def drives(self, logic_input):
-        if logic_input not in self._inputs:
-            self._inputs.append(logic_input)
-            logic_input.notify(self._level)
+    def drives(self, *logic_inputs):
+        for logic_input in logic_inputs:
+            if logic_input not in self._inputs:
+                self._inputs.append(logic_input)
+                logic_input.notify(self._level)
         return self
 
     # set the level
@@ -76,7 +77,7 @@ class LogicInput(object):
     simulates pull-up/down resistors and fires callbacks on 
     edge transitions."""
 
-    _no_callback = staticmethod(lambda: None)
+    _no_callback = staticmethod(lambda *args: None)
 
     def __init__(self, pull_level=Level.FLOATING):
         '''Use pull_level to simulate pull-up/pull-down resistor behavior:
@@ -90,8 +91,9 @@ class LogicInput(object):
         self.set_pull_level(pull_level)
 
         # callbacks
-        self._on_rising  = self._no_callback
-        self._on_falling = self._no_callback
+        self._on_rising   = self._no_callback  # rising edge
+        self._on_falling  = self._no_callback  # falling edge
+        self._on_floating = self._no_callback  # starts to float
 
     def set_pull_level(self, level):
         '''Change the pull-up behavior'''
@@ -141,6 +143,8 @@ class LogicInput(object):
                 self._on_rising()
             elif self._resolved_level == Level.LOW:
                 self._on_falling()
+            elif self._resolved_level == Level.FLOATING:
+                self._on_floating()
 
     # internal helpers
 
@@ -159,6 +163,10 @@ class LogicInput(object):
         self._on_falling = callback
         return self
 
+    def on_floating(self, callback):
+        self._on_floating = callback
+        return self
+
     def driver(self):
         """Build a LogicOutput that drives this input."""
         out = LogicOutput(self._resolved_level)
@@ -170,6 +178,7 @@ class LogicInput(object):
         out = LogicOutput(self._resolved_level)
         self.on_rising(out.set_high)
         self.on_falling(out.set_low)
+        self.on_floating(out.set_floating)
         return out
 
 
@@ -181,9 +190,9 @@ class Inverter(object):
         self.input = LogicInput()
         self.output = LogicOutput()
 
-        # callbacks from input change output
         self.input.on_rising(self.output.set_low)
         self.input.on_falling(self.output.set_high)
+        self.input.on_floating(self.output.set_floating)
 
 
 class Mux(object):
@@ -208,15 +217,19 @@ class Mux(object):
         self.output.set_level(self.input_a.level)
         self.input_a.on_rising(self.output.set_high)
         self.input_a.on_falling(self.output.set_low)
+        self.input_a.on_floating(self.output.set_floating)
         self.input_b.on_rising(LogicInput._no_callback)
         self.input_b.on_falling(LogicInput._no_callback)
+        self.input_b.on_floating(LogicInput._no_callback)
 
     def _route_input_b_to_output(self):
         self.output.set_level(self.input_b.level)
         self.input_b.on_rising(self.output.set_high)
         self.input_b.on_falling(self.output.set_low)
+        self.input_b.on_floating(self.output.set_floating)
         self.input_a.on_rising(LogicInput._no_callback)
         self.input_a.on_falling(LogicInput._no_callback)
+        self.input_a.on_floating(LogicInput._no_callback)
 
 
 class Demux(object):
@@ -242,9 +255,11 @@ class Demux(object):
         self.output_a.set_level(self.input.level)
         self.input.on_rising(self.output_a.set_high)
         self.input.on_falling(self.output_a.set_low)
+        self.input.on_floating(self.output_a.set_floating)
 
     def _route_input_to_output_b(self):
         self.output_a.set_floating()
         self.output_b.set_level(self.input.level)
         self.input.on_rising(self.output_b.set_high)
         self.input.on_falling(self.output_b.set_low)
+        self.input.on_floating(self.output_b.set_floating)

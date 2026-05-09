@@ -54,9 +54,9 @@ class Machine:
             When P4.3 is LOW:  CSI30 drives the uPD16432B, FIS floats
             When P4.3 is HIGH: CSI30 drives the FIS bus, uPD16432B floats
         """
-        clk_demux = Demux()
-        dat_demux = Demux()
-        self.mcu.p4.pins[3].output.drives(clk_demux.select_in).drives(dat_demux.select_in)
+        clk_demux, dat_demux = Demux(), Demux()
+        self.mcu.p4.pins[3].output.drives(clk_demux.select_in,
+                                          dat_demux.select_in)
         self.mcu.p32_sck30_out.drives(clk_demux.input)
         self.mcu.p31_so30_out.drives(dat_demux.input)
 

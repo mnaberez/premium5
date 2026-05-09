@@ -144,9 +144,10 @@ class UPD78F0831Y:
         self.p31_so30_out = self._so30_mux.output
         self.p32_sck30_out = self._sck30_mux.output
 
-        # P3.0/SI30: fanout to both GPIO and SPI
+        # P3.0/SI30: feeds both GPIO and SPI
         self.p30_si30_in = LogicInput()
-        self.p30_si30_in.monitor().drives(self.p3.pins[0].input).drives(self._csi30.dat_in)
+        self.p30_si30_in.monitor().drives(self.p3.pins[0].input, 
+                                          self._csi30.dat_in)
 
     def _init_csi31(self):
         # TODO: CSI31 (CDC) not mapped — no CD changer connected.
@@ -173,9 +174,10 @@ class UPD78F0831Y:
         self._uart0.tx_enabled_out.drives(self._txd0_mux.select_in)
         self.p25_txd0_out = self._txd0_mux.output
 
-        # P2.4/RxD0: fanout to both GPIO and UART
+        # P2.4/RxD0: feeds both GPIO and UART
         self.p24_rxd0_in = LogicInput()
-        self.p24_rxd0_in.monitor().drives(self.p2.pins[4].input).drives(self._uart0.rxd_in)
+        self.p24_rxd0_in.monitor().drives(self.p2.pins[4].input,
+                                          self._uart0.rxd_in)
 
     def _init_i2c(self):
         bus = self.proc.bus
@@ -188,7 +190,7 @@ class UPD78F0831Y:
         bus = self.proc.bus
 
         tm01_cr011 = CompareMatchTimerDevice("tm01_cr011")
-        bus.add_device(tm01_cr011, (0xFF12, 0xFF15))
+        bus.add_device(tm01_cr011, (0xFF12, 0xFF13), (0xFF14, 0xFF15))
         self._intc.connect(tm01_cr011, tm01_cr011.INT_COMPARE, self._intc.INTTM011)
 
         adc = ADCDevice("adc", result=0x8C)  # 14.0V typical car battery

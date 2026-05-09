@@ -1,5 +1,5 @@
 import unittest
-from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Demux
+from premium5.digital import Level, LogicOutput, LogicInput, Inverter, Mux, Demux
 
 
 class LogicOutputTests(unittest.TestCase):
@@ -118,6 +118,67 @@ class LogicOutputTests(unittest.TestCase):
         self.assertTrue(inp1.high)
         self.assertTrue(inp2.high)
 
+    def test_drives_multiple_in_one_call(self):
+        out = LogicOutput()
+        inp1 = LogicInput()
+        inp2 = LogicInput()
+        out.drives(inp1, inp2)
+
+        out.set_high()
+        self.assertTrue(inp1.high)
+        self.assertTrue(inp2.high)
+
+    def test_drives_returns_self(self):
+        out = LogicOutput()
+        inp = LogicInput()
+
+        result = out.drives(inp)
+        self.assertIs(result, out)
+
+    def test_follower_returns_logic_input(self):
+        out = LogicOutput()
+
+        follower = out.follower()
+        self.assertIsInstance(follower, LogicInput)
+
+    def test_follower_mirrors_level(self):
+        out = LogicOutput(Level.HIGH)
+
+        follower = out.follower()
+        self.assertTrue(follower.high)
+
+        out.set_low()
+        self.assertTrue(follower.low)
+
+    def test_follower_mirrors_floating(self):
+        out = LogicOutput(Level.HIGH)
+
+        follower = out.follower()
+        out.set_floating()
+        self.assertTrue(follower.floating)
+
+    def test_inverted_returns_logic_output(self):
+        out = LogicOutput()
+
+        inv = out.inverted()
+        self.assertIsInstance(inv, LogicOutput)
+
+    def test_inverted_inverts_level(self):
+        out = LogicOutput(Level.HIGH)
+
+        inv = out.inverted()
+        self.assertTrue(inv.low)
+
+        out.set_low()
+        self.assertTrue(inv.high)
+
+    def test_inverted_floating_stays_floating(self):
+        out = LogicOutput(Level.HIGH)
+
+        inv = out.inverted()
+        out.set_floating()
+        self.assertTrue(inv.floating)
+
 
 class LogicInputTests(unittest.TestCase):
 
@@ -229,15 +290,113 @@ class LogicInputTests(unittest.TestCase):
         inp = LogicInput(pull_level=Level.FLOATING)
         self.assertEqual(int(inp), 0)
 
+    def test_driver_returns_logic_output(self):
+        inp = LogicInput()
+
+        drv = inp.driver()
+        self.assertIsInstance(drv, LogicOutput)
+
+    def test_driver_drives_the_input(self):
+        inp = LogicInput()
+
+        drv = inp.driver()
+        drv.set_high()
+        self.assertTrue(inp.high)
+
+        drv.set_low()
+        self.assertTrue(inp.low)
+
+    def test_driver_starts_at_current_level(self):
+        inp = LogicInput(pull_level=Level.HIGH)
+
+        drv = inp.driver()
+        self.assertTrue(drv.high)
+
+    def test_monitor_returns_logic_output(self):
+        inp = LogicInput()
+
+        mon = inp.monitor()
+        self.assertIsInstance(mon, LogicOutput)
+
+    def test_monitor_mirrors_level(self):
+        inp = LogicInput()
+        mon = inp.monitor()
+
+        out = LogicOutput()
+        out.drives(inp)
+
+        out.set_high()
+        self.assertTrue(mon.high)
+
+        out.set_low()
+        self.assertTrue(mon.low)
+
+    def test_monitor_mirrors_floating(self):
+        inp = LogicInput()
+        mon = inp.monitor()
+
+        out = LogicOutput(Level.HIGH)
+        out.drives(inp)
+
+        out.set_floating()
+        self.assertTrue(mon.floating)
+
+    def test_monitor_starts_at_current_level(self):
+        inp = LogicInput(pull_level=Level.HIGH)
+
+        mon = inp.monitor()
+        self.assertTrue(mon.high)
+
+    def test_on_floating_callback(self):
+        inp = LogicInput(pull_level=Level.HIGH)
+        calls = []
+        inp.on_floating(lambda: calls.append('floating'))
+
+        out = LogicOutput(Level.HIGH)
+        out.drives(inp)
+
+        out.set_floating()  # pull-up resolves to HIGH, no change
+        self.assertEqual(calls, [])
+
+        inp.set_pull_level(Level.FLOATING)  # set_pull_level doesn't fire callbacks
+        self.assertEqual(calls, [])
+
+    def test_on_floating_callback_fires(self):
+        inp = LogicInput()
+        calls = []
+        inp.on_floating(lambda: calls.append('floating'))
+
+        out = LogicOutput(Level.HIGH)
+        out.drives(inp)
+
+        out.set_floating()
+        self.assertEqual(calls, ['floating'])
+
+    def test_on_rising_returns_self(self):
+        inp = LogicInput()
+
+        result = inp.on_rising(lambda: None)
+        self.assertIs(result, inp)
+
+    def test_on_falling_returns_self(self):
+        inp = LogicInput()
+
+        result = inp.on_falling(lambda: None)
+        self.assertIs(result, inp)
+
+    def test_on_floating_returns_self(self):
+        inp = LogicInput()
+
+        result = inp.on_floating(lambda: None)
+        self.assertIs(result, inp)
+
 
 class InverterTests(unittest.TestCase):
 
     def test_inverts(self):
         inv = Inverter()
-
         signal = LogicOutput()
         signal.drives(inv.input)
-
         inverted_signal = LogicInput()
         inv.output.drives(inverted_signal)
 
@@ -246,77 +405,222 @@ class InverterTests(unittest.TestCase):
         signal.set_low()
         self.assertTrue(inverted_signal.high)
 
+    def test_floating_input_leaves_output_floating(self):
+        inv = Inverter()
+        self.assertTrue(inv.input.floating)
+        self.assertTrue(inv.output.floating)
 
-class MuxTests(unittest.TestCase):
+    def test_input_going_floating_makes_output_floating(self):
+        inv = Inverter()
+        signal = LogicOutput()
+        signal.drives(inv.input)
+
+        signal.set_high()
+        self.assertTrue(inv.output.low)
+
+        signal.set_floating()
+        self.assertTrue(inv.output.floating)
+
+
+class DemuxTests(unittest.TestCase):
 
     def test_default_routes_to_output_a(self):
-        mux = Demux()
+        demux = Demux()
         signal = LogicOutput(Level.HIGH)
-        signal.drives(mux.input)
+        signal.drives(demux.input)
 
         signal.set_low()
-        self.assertTrue(mux.output_a.low)
+        self.assertTrue(demux.output_a.low)
         signal.set_high()
-        self.assertTrue(mux.output_a.high)
+        self.assertTrue(demux.output_a.high)
 
-        self.assertTrue(mux.output_b.floating)
+        self.assertTrue(demux.output_b.floating)
 
     def test_select_low_routes_to_output_a(self):
-        mux = Demux()
+        demux = Demux()
         select = LogicOutput(Level.LOW)
-        select.drives(mux.select_in)
+        select.drives(demux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.drives(mux.input)
+        signal.drives(demux.input)
 
         signal.set_low()
-        self.assertTrue(mux.output_a.low)
+        self.assertTrue(demux.output_a.low)
         signal.set_high()
-        self.assertTrue(mux.output_a.high)
+        self.assertTrue(demux.output_a.high)
 
-        self.assertTrue(mux.output_b.floating)
+        self.assertTrue(demux.output_b.floating)
 
     def test_select_high_routes_to_output_b(self):
-        mux = Demux()
+        demux = Demux()
         select = LogicOutput(Level.HIGH)
-        select.drives(mux.select_in)
+        select.drives(demux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.drives(mux.input)
+        signal.drives(demux.input)
 
         signal.set_low()
-        self.assertTrue(mux.output_b.low)
+        self.assertTrue(demux.output_b.low)
         signal.set_high()
-        self.assertTrue(mux.output_b.high)
+        self.assertTrue(demux.output_b.high)
 
-        self.assertTrue(mux.output_a.floating)
+        self.assertTrue(demux.output_a.floating)
 
     def test_select_floating_routes_to_output_a(self):
-        mux = Demux()
+        demux = Demux()
         select = LogicOutput(Level.FLOATING)
-        select.drives(mux.select_in)
-        self.assertTrue(mux.select_in.low)  # pulled down
+        select.drives(demux.select_in)
+        self.assertTrue(demux.select_in.low)  # pulled down
         signal = LogicOutput(Level.HIGH)
-        signal.drives(mux.input)
+        signal.drives(demux.input)
 
         signal.set_low()
-        self.assertTrue(mux.output_a.low)
+        self.assertTrue(demux.output_a.low)
         signal.set_high()
-        self.assertTrue(mux.output_a.high)
+        self.assertTrue(demux.output_a.high)
 
-        self.assertTrue(mux.output_b.floating)
+        self.assertTrue(demux.output_b.floating)
 
     def test_switching_pushes_current_levels(self):
-        mux = Demux()
+        demux = Demux()
         select = LogicOutput(Level.LOW)
-        select.drives(mux.select_in)
+        select.drives(demux.select_in)
         signal = LogicOutput(Level.HIGH)
-        signal.drives(mux.input)
+        signal.drives(demux.input)
 
-        self.assertTrue(mux.output_a.high)
-        self.assertTrue(mux.output_b.floating)
+        self.assertTrue(demux.output_a.high)
+        self.assertTrue(demux.output_b.floating)
 
         select.set_high()
 
-        self.assertTrue(mux.output_b.high)
-        self.assertTrue(mux.output_a.floating)
+        self.assertTrue(demux.output_b.high)
+        self.assertTrue(demux.output_a.floating)
+
+    def test_input_going_floating_propagates_to_active_output(self):
+        demux = Demux()
+        signal = LogicOutput(Level.HIGH)
+        signal.drives(demux.input)
+
+        self.assertTrue(demux.output_a.high)
+
+        signal.set_floating()
+        self.assertTrue(demux.output_a.floating)
+
+    def test_inactive_output_stays_floating_when_input_changes(self):
+        demux = Demux()
+        select = LogicOutput(Level.LOW)
+        select.drives(demux.select_in)
+        signal = LogicOutput(Level.HIGH)
+        signal.drives(demux.input)
+
+        self.assertTrue(demux.output_b.floating)
+
+        signal.set_low()
+        self.assertTrue(demux.output_b.floating)
+
+        signal.set_floating()
+        self.assertTrue(demux.output_b.floating)
+
+
+class MuxTests(unittest.TestCase):
+
+    def test_default_routes_input_a_to_output(self):
+        mux = Mux()
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.LOW)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.high)
+        signal_a.set_low()
+        self.assertTrue(mux.output.low)
+
+    def test_select_low_routes_input_a_to_output(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.drives(mux.select_in)
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.LOW)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.high)
+        signal_a.set_low()
+        self.assertTrue(mux.output.low)
+
+    def test_select_high_routes_input_b_to_output(self):
+        mux = Mux()
+        select = LogicOutput(Level.HIGH)
+        select.drives(mux.select_in)
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.LOW)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.low)
+        signal_b.set_high()
+        self.assertTrue(mux.output.high)
+
+    def test_inactive_input_does_not_affect_output(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.drives(mux.select_in)
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.LOW)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.high)
+        signal_b.set_high()  # input_b is inactive, should not affect output
+        self.assertTrue(mux.output.high)
+        signal_b.set_low()
+        self.assertTrue(mux.output.high)
+
+    def test_select_floating_routes_input_a(self):
+        mux = Mux()
+        select = LogicOutput(Level.FLOATING)
+        select.drives(mux.select_in)
+        self.assertTrue(mux.select_in.low)  # pulled down
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+
+        self.assertTrue(mux.output.high)
+
+    def test_switching_pushes_current_levels(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.drives(mux.select_in)
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.LOW)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.high)  # from input_a
+
+        select.set_high()
+
+        self.assertTrue(mux.output.low)  # now from input_b
+
+    def test_active_input_going_floating_propagates_to_output(self):
+        mux = Mux()
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+
+        self.assertTrue(mux.output.high)
+
+        signal_a.set_floating()
+        self.assertTrue(mux.output.floating)
+
+    def test_inactive_input_going_floating_does_not_affect_output(self):
+        mux = Mux()
+        select = LogicOutput(Level.LOW)
+        select.drives(mux.select_in)
+        signal_a = LogicOutput(Level.HIGH)
+        signal_a.drives(mux.input_a)
+        signal_b = LogicOutput(Level.HIGH)
+        signal_b.drives(mux.input_b)
+
+        self.assertTrue(mux.output.high)
+
+        signal_b.set_floating()  # input_b is inactive
+        self.assertTrue(mux.output.high)  # output unchanged
 
 
