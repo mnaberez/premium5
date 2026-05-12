@@ -1,17 +1,18 @@
-import os
-import json
 import http.server
+import importlib.resources
+import json
 import threading
 
 from premium5.emulator import Emulator, Listing, emulator_thread
 
 
-WEB_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
-
-
 class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, directory=WEB_ROOT, **kwargs):
-        super().__init__(*args, directory=directory, **kwargs)
+    def __init__(self, *args, **kwargs):
+        if kwargs.get('directory') is None:
+            package_files = importlib.resources.files(__package__)
+            document_root = str(package_files.joinpath('web'))
+            kwargs['directory'] = document_root
+        super().__init__(*args, **kwargs)
 
     def do_GET(self):
         if self.path == '/events':
