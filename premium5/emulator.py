@@ -7,9 +7,10 @@ from collections import deque
 
 from k0dasm.disassemble import disassemble
 from k0emu.processor import RegisterPairs, Flags, RunState
+from premium5.digital import Level, LogicOutput
 from premium5.eeprom import populate
 from premium5.machine import Machine
-from premium5.digital import Level, LogicOutput
+from premium5.mfsw import MFSW
 from premium5.timing import Governor
 
 
@@ -183,7 +184,6 @@ class Emulator:
             self.running = False
             self.reset()
 
-
         elif action == 'power_key':
             self._power_key.set_high()   # release (ensures edge on re-press)
             self._p02_driver.set_low()   # P0.2 low (wake)
@@ -193,23 +193,17 @@ class Emulator:
             self._stop_eject_key.set_high()  # release (ensures edge on re-press)
             self._stop_eject_key.set_low()   # P0.6 low (key pressed)
 
-        elif action == 'key_down':
+        elif action == 'upd_key_down':
             self.upd.key_data[cmd['byte']] |= cmd['mask']
 
-        elif action == 'key_up':
+        elif action == 'upd_key_up':
             self.upd.key_data[cmd['byte']] &= ~cmd['mask']
 
-        elif action == 'mfsw':
-            from premium5.mfsw import MFSW
-            code = cmd.get('code')
-            codes = {
-                'vol_down': MFSW.VOL_DOWN,
-                'vol_up': MFSW.VOL_UP,
-                'up': MFSW.UP,
-                'down': MFSW.DOWN,
-            }
-            if code in codes and not self.mfsw.busy:
-                self.mfsw.send(codes[code])
+        elif action == 'mfsw_key_down':
+            self.mfsw.key_down(cmd['code'])
+
+        elif action == 'mfsw_key_up':
+            self.mfsw.key_up()
 
 
 def emulator_thread(emulator):

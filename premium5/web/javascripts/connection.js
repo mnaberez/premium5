@@ -53,7 +53,7 @@ class Connection {
     // Faceplate button input
     buttonDown(buttonCode) {
         if (buttonCode.type === 'key') {
-            this._send('key_down', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
+            this._send('upd_key_down', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
         } else if (buttonCode.name === 'power') {
             this._send('power_key');
         }
@@ -61,12 +61,13 @@ class Connection {
 
     buttonUp(buttonCode) {
         if (buttonCode.type === 'key') {
-            this._send('key_up', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
+            this._send('upd_key_up', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
         }
     }
 
     // MFSW (steering wheel) input
-    mfsw(code) { this._send('mfsw', {code: code}); }
+    mfswKeyDown(code) { this._send('mfsw_key_down', {code: code}); }
+    mfswKeyUp(code)   { this._send('mfsw_key_up',   {code: code}); }
 }
 
 // Hydrated from the JSON state object pushed by the server.

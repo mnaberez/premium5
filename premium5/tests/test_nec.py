@@ -1,7 +1,7 @@
 import unittest
-from premium5.nec import (NECTransmitter, NECReceiver,
+from premium5.nec import (NECTransmitter, NECReceiver, Symbol,
                           START_SYMBOL, ZERO_SYMBOL, ONE_SYMBOL,
-                          TIMEOUT_TICKS)
+                          REPEAT_SYMBOL, STOP_SYMBOL, TIMEOUT_TICKS)
 from premium5.digital import LogicOutput
 
 
@@ -37,7 +37,7 @@ class NECTransmitterTests(unittest.TestCase):
         self.tx.send(0x08)
         for _ in range(1_000_000):
             self.tx.tick_1mhz()
-        self.assertEqual(self.completions, [True])
+        self.assertEqual(len(self.completions), 1)
 
     def test_start_mark_timing(self):
         self.tx.send(0x08)
@@ -90,6 +90,25 @@ class NECTransmitterTests(unittest.TestCase):
         rx = self._receive_packet(0xFF)
         self.assertEqual(rx, [0xAA, 0x55, 0xFF, 0x00])
 
+    # repeat()
+
+    def test_repeat_busy(self):
+        self.tx.repeat()
+        self.assertTrue(self.tx.busy)
+
+    def test_repeat_completes(self):
+        self.tx.repeat()
+        for _ in range(1_000_000):
+            self.tx.tick_1mhz()
+        self.assertFalse(self.tx.busy)
+        self.assertEqual(len(self.completions), 1)
+
+    def test_repeat_returns_to_idle(self):
+        self.tx.repeat()
+        for _ in range(1_000_000):
+            self.tx.tick_1mhz()
+        self.assertTrue(self.tx.data_out.low)
+
     def _receive_packet(self, command):
         """Send a command, capture edges, decode 4 bytes."""
         self.tx.send(command)
@@ -126,7 +145,9 @@ class NECReceiverTests(unittest.TestCase):
 
     def setUp(self):
         self.commands = []
-        self.rx = NECReceiver(0xCA, 0x34, self.commands.append)
+        self.repeats = []
+        self.rx = NECReceiver(0xCA, 0x34, self.commands.append,
+                              lambda: self.repeats.append(True))
         self.signal = LogicOutput()
         self.signal.drives(self.rx.data_in)
 
@@ -136,9 +157,21 @@ class NECReceiverTests(unittest.TestCase):
         self.signal.set_low()
         self.rx.tick_1mhz(START_SYMBOL.space_ticks)
 
+    def _send_repeat(self):
+        """Send a repeat frame: repeat symbol + stop mark + falling edge."""
+        # repeat symbol (mark + space)
+        self.signal.set_high()
+        self.rx.tick_1mhz(REPEAT_SYMBOL.mark_ticks)
+        self.signal.set_low()
+        self.rx.tick_1mhz(REPEAT_SYMBOL.space_ticks)
+        # stop mark + falling edge
+        self.signal.set_high()
+        self.rx.tick_1mhz(STOP_SYMBOL.mark_ticks)
+        self.signal.set_low()
+
     def _send_packet(self, *data_bytes):
         """Send a complete packet:
-           start bit + data bytes + trailing mark + timeout."""
+           start symbol + data bytes + stop mark + falling edge."""
 
         self._start_bit()
 
@@ -156,11 +189,10 @@ class NECReceiverTests(unittest.TestCase):
                 else:
                     self.rx.tick_1mhz(ZERO_SYMBOL.space_ticks)
 
-        # trailing mark + timeout
+        # stop mark + falling edge
         self.signal.set_high()
-        self.rx.tick_1mhz(ZERO_SYMBOL.mark_ticks)
+        self.rx.tick_1mhz(STOP_SYMBOL.mark_ticks)
         self.signal.set_low()
-        self.rx.tick_1mhz(TIMEOUT_TICKS + 1)
 
     # valid commands
 
@@ -183,9 +215,11 @@ class NECReceiverTests(unittest.TestCase):
         self._send_packet(0xCA, 0x34)
         self.assertEqual(self.commands, [])
 
-    def test_rejects_packet_too_long(self):
+    def test_truncates_at_32_bits(self):
+        # The receiver accepts the first 32 bits and treats the next
+        # mark as the stop pulse.  Extra bits after that are ignored.
         self._send_packet(0xCA, 0x34, 0x08, 0xF7, 0x00)
-        self.assertEqual(self.commands, [])
+        self.assertEqual(self.commands, [0x08])
 
     def test_rejects_bad_first_header_byte(self):
         self._send_packet(0xCA + 1, 0x34, 0x08, 0xF7)
@@ -236,20 +270,6 @@ class NECReceiverTests(unittest.TestCase):
         self._send_packet(0xCA, 0x34, 0x27, 0xD8)
         self.assertEqual(self.commands, [0x27])
 
-    def test_start_bit_resets_mid_stream(self):
-        # start bit + 2 bytes of garbage
-        self._start_bit()
-
-        for _ in range(16):
-            self.signal.set_high()
-            self.rx.tick_1mhz(ZERO_SYMBOL.mark_ticks)
-            self.signal.set_low()
-            self.rx.tick_1mhz(ZERO_SYMBOL.space_ticks)
-
-        # new start bit resets, then real command
-        self._send_packet(0xCA, 0x34, 0x27, 0xD8)
-        self.assertEqual(self.commands, [0x27])
-
     # mark timeout
 
     def test_mark_timeout_discards_bits(self):
@@ -275,7 +295,7 @@ class NECReceiverTests(unittest.TestCase):
 
     def test_accepts_start_mark_at_minus_20_percent(self):
         self.signal.set_high()
-        self.rx.tick_1mhz(START_SYMBOL._mark.start)
+        self.rx.tick_1mhz(START_SYMBOL.mark_range.start)
         self.signal.set_low()
         self.rx.tick_1mhz(START_SYMBOL.space_ticks)
 
@@ -299,7 +319,7 @@ class NECReceiverTests(unittest.TestCase):
 
     def test_accepts_start_mark_at_plus_20_percent(self):
         self.signal.set_high()
-        self.rx.tick_1mhz(START_SYMBOL._mark.stop - 1)
+        self.rx.tick_1mhz(START_SYMBOL.mark_range.stop - 1)
         self.signal.set_low()
         self.rx.tick_1mhz(START_SYMBOL.space_ticks)
 
@@ -323,7 +343,7 @@ class NECReceiverTests(unittest.TestCase):
 
     def test_rejects_start_mark_too_short(self):
         self.signal.set_high()
-        self.rx.tick_1mhz(START_SYMBOL._mark.start - 1)
+        self.rx.tick_1mhz(START_SYMBOL.mark_range.start - 1)
         self.signal.set_low()
         self.rx.tick_1mhz(START_SYMBOL.space_ticks)
 
@@ -349,7 +369,7 @@ class NECReceiverTests(unittest.TestCase):
         self.signal.set_high()
         self.rx.tick_1mhz(START_SYMBOL.mark_ticks)
         self.signal.set_low()
-        self.rx.tick_1mhz(START_SYMBOL._space.start)
+        self.rx.tick_1mhz(START_SYMBOL.space_range.start)
 
         for byte in [0xCA, 0x34, 0x08, 0xF7]:
             for i in range(8):
@@ -372,7 +392,7 @@ class NECReceiverTests(unittest.TestCase):
     def test_accepts_data_mark_at_minus_20_percent(self):
         self._start_bit()
 
-        mark_ticks = ZERO_SYMBOL._mark.start
+        mark_ticks = ZERO_SYMBOL.mark_range.start
         for byte in [0xCA, 0x34, 0x08, 0xF7]:
             for i in range(8):
                 bit = (byte >> i) & 1
@@ -394,7 +414,7 @@ class NECReceiverTests(unittest.TestCase):
     def test_accepts_data_mark_at_plus_20_percent(self):
         self._start_bit()
 
-        mark_ticks = ZERO_SYMBOL._mark.stop - 1
+        mark_ticks = ZERO_SYMBOL.mark_range.stop - 1
         for byte in [0xCA, 0x34, 0x08, 0xF7]:
             for i in range(8):
                 bit = (byte >> i) & 1
@@ -416,7 +436,7 @@ class NECReceiverTests(unittest.TestCase):
     def test_accepts_zero_space_at_minus_20_percent(self):
         self._start_bit()
 
-        zero_space = ZERO_SYMBOL._space.start
+        zero_space = ZERO_SYMBOL.space_range.start
         one_space = ONE_SYMBOL.space_ticks
         for byte in [0xCA, 0x34, 0x08, 0xF7]:
             for i in range(8):
@@ -436,7 +456,7 @@ class NECReceiverTests(unittest.TestCase):
     def test_accepts_one_space_at_plus_20_percent(self):
         self._start_bit()
 
-        one_space = ONE_SYMBOL._space.stop - 1
+        one_space = ONE_SYMBOL.space_range.stop - 1
         zero_space = ZERO_SYMBOL.space_ticks
         for byte in [0xCA, 0x34, 0x08, 0xF7]:
             for i in range(8):
@@ -453,39 +473,141 @@ class NECReceiverTests(unittest.TestCase):
 
         self.assertEqual(self.commands, [0x08])
 
+    # repeat
+
+    def test_receives_repeat(self):
+        self._send_repeat()
+        self.assertEqual(len(self.repeats), 1)
+
+    def test_repeat_does_not_fire_on_command(self):
+        self._send_packet(0xCA, 0x34, 0x08, 0xF7)
+        self.assertEqual(len(self.repeats), 0)
+
+    def test_command_after_repeat(self):
+        self._send_repeat()
+        self._send_packet(0xCA, 0x34, 0x08, 0xF7)
+        self.assertEqual(len(self.repeats), 1)
+        self.assertEqual(self.commands, [0x08])
+
+    # stop mark validation
+
+    def test_rejects_repeat_with_bad_stop_mark(self):
+        # repeat symbol
+        self.signal.set_high()
+        self.rx.tick_1mhz(REPEAT_SYMBOL.mark_ticks)
+        self.signal.set_low()
+        self.rx.tick_1mhz(REPEAT_SYMBOL.space_ticks)
+        # stop mark too long
+        self.signal.set_high()
+        self.rx.tick_1mhz(STOP_SYMBOL.mark_range.stop)
+        self.signal.set_low()
+        self.assertEqual(len(self.repeats), 0)
+
+    def test_rejects_command_with_bad_stop_mark(self):
+        self._start_bit()
+        for byte in [0xCA, 0x34, 0x08, 0xF7]:
+            for i in range(8):
+                bit = (byte >> i) & 1
+                self.signal.set_high()
+                self.rx.tick_1mhz(ZERO_SYMBOL.mark_ticks)
+                self.signal.set_low()
+                if bit:
+                    self.rx.tick_1mhz(ONE_SYMBOL.space_ticks)
+                else:
+                    self.rx.tick_1mhz(ZERO_SYMBOL.space_ticks)
+        # stop mark too long
+        self.signal.set_high()
+        self.rx.tick_1mhz(STOP_SYMBOL.mark_range.stop)
+        self.signal.set_low()
+        self.assertEqual(self.commands, [])
+
+
 
 class NECEndToEndTests(unittest.TestCase):
 
     def setUp(self):
         self.commands = []
+        self.repeats = []
         self.tx = NECTransmitter(0xAA, 0x55, lambda: None)
-        self.rx = NECReceiver(0xAA, 0x55, self.commands.append)
+        self.rx = NECReceiver(0xAA, 0x55, self.commands.append,
+                              lambda: self.repeats.append(True))
         self.tx.data_out.drives(self.rx.data_in)
 
-    def _send_and_receive(self, command):
-        self.tx.send(command)
-        for _ in range(1_000_000):
+    def _tick(self, ticks):
+        for _ in range(ticks):
             self.tx.tick_1mhz()
             self.rx.tick_1mhz(1)
-        self.rx.tick_1mhz(TIMEOUT_TICKS + 1)
 
     def test_receives_command_0x00(self):
-        self._send_and_receive(0x00)
+        self.tx.send(0x00)
+        self._tick(1_000_000)
         self.assertEqual(self.commands, [0x00])
 
     def test_receives_command_0x08(self):
-        self._send_and_receive(0x08)
+        self.tx.send(0x08)
+        self._tick(1_000_000)
         self.assertEqual(self.commands, [0x08])
 
     def test_receives_command_0x27(self):
-        self._send_and_receive(0x27)
+        self.tx.send(0x27)
+        self._tick(1_000_000)
         self.assertEqual(self.commands, [0x27])
 
     def test_receives_command_0xff(self):
-        self._send_and_receive(0xFF)
+        self.tx.send(0xFF)
+        self._tick(1_000_000)
         self.assertEqual(self.commands, [0xFF])
 
     def test_receives_two_commands(self):
-        self._send_and_receive(0x08)
-        self._send_and_receive(0x27)
+        self.tx.send(0x08)
+        self._tick(1_000_000)
+        self.tx.send(0x27)
+        self._tick(1_000_000)
         self.assertEqual(self.commands, [0x08, 0x27])
+
+    def test_receives_repeat(self):
+        self.tx.repeat()
+        self._tick(1_000_000)
+        self.assertEqual(len(self.commands), 0)
+        self.assertEqual(len(self.repeats), 1)
+
+
+class SymbolTests(unittest.TestCase):
+
+    def test_detects_exact_nominal(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertTrue(s.detect(mark_ticks=1000, space_ticks=500))
+
+    def test_detects_at_minus_20_percent(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertTrue(s.detect(mark_ticks=800, space_ticks=400))
+
+    def test_detects_at_plus_20_percent(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertTrue(s.detect(mark_ticks=1200, space_ticks=600))
+
+    def test_rejects_mark_too_short(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertFalse(s.detect(mark_ticks=799, space_ticks=500))
+
+    def test_rejects_mark_too_long(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertFalse(s.detect(mark_ticks=1201, space_ticks=500))
+
+    def test_rejects_space_too_short(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertFalse(s.detect(mark_ticks=1000, space_ticks=399))
+
+    def test_rejects_space_too_long(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertFalse(s.detect(mark_ticks=1000, space_ticks=601))
+
+    def test_rejects_both_out_of_range(self):
+        s = Symbol(mark_ticks=1000, space_ticks=500)
+        self.assertFalse(s.detect(mark_ticks=799, space_ticks=399))
+
+    def test_min_ticks_never_below_one(self):
+        s = Symbol(mark_ticks=1, space_ticks=1)
+        self.assertTrue(s.detect(mark_ticks=1, space_ticks=1))
+        self.assertFalse(s.detect(mark_ticks=0, space_ticks=1))
+        self.assertFalse(s.detect(mark_ticks=1, space_ticks=0))

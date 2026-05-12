@@ -41,9 +41,12 @@ const controls = new Controls(conn);
 faceplate.onButtonDown = function(buttonCode) { conn.buttonDown(buttonCode); };
 faceplate.onButtonUp = function(buttonCode) { conn.buttonUp(buttonCode); };
 
+const mfsw = new MFSW(document.querySelector('.mfsw-controls'));
+mfsw.onButtonDown = function(code) { conn.mfswKeyDown(code); };
+mfsw.onButtonUp = function(code) { conn.mfswKeyUp(code); };
+
 // Expose globals for inline onclick handlers in HTML
 window.sendCmd = function(action) { controls[action](); };
-window.sendMFSW = function(code) { conn.mfsw(code); };
 window.toggleAnimate = function() { controls.toggleAnimate(); };
 window.setAnimateSpeed = function(val) { controls.setAnimateSpeed(val); };
 window.toggleExpand = function() {

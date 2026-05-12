@@ -6,7 +6,7 @@ class CDC:
     """Stub for the CD changer"""
 
     def __init__(self):
-        self._rx = NECReceiver(0xCA, 0x34, self._on_command)
+        self._rx = NECReceiver(0xCA, 0x34, self._on_command, lambda: None)
 
         # electrical interface
         self.cmd_in = self._rx.data_in

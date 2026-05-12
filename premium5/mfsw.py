@@ -1,14 +1,9 @@
-"""MFSW (Multi-Function Steering Wheel) transmitter.
-
-Emulates the steering wheel controller that sends key presses to
-the radio over a single-wire NEC-like protocol.
-"""
 from premium5.nec import NECTransmitter
 
 
 class MFSW:
     """Multi-Function Steering Wheel
-
+    
     Sends packets to the radio as the steering wheel buttons would.
     """
 
@@ -18,6 +13,12 @@ class MFSW:
     UP       = 0x0A
     DOWN     = 0x0B
 
+    # Repeat interval.  The radio's firmware accepts a repeat frame
+    # up to 155ms after a command frame and up to 210ms after a
+    # repeat frame.  We picked 100ms because it is within those.
+    # TODO: study a real MFSW with a logic analyzer.
+    REPEAT_TICKS = 100_000
+
     def __init__(self):
         self._tx = NECTransmitter(0x82, 0x17, lambda: None)
 
@@ -25,21 +26,29 @@ class MFSW:
         # NECTransmitter is the opposite so its output is inverted
         self.swc_out = self._tx.data_out.inverted()
 
-    def send(self, key_code):
-        if self._tx.busy:
-            raise MFSWBusyError()
-        self._tx.send(key_code)
+        self._down_code = None
+        self._ticks_until_repeat = self.REPEAT_TICKS
+
+    def key_down(self, code):
+        '''Call this only once as the key goes down.  The given code
+        must be one of the key code constants.  A command frame will
+        be sent with the key code.  The key repeat will be handled
+        on tick.'''
+        self._down_code = code
+        self._tx.send(code)
+        self._ticks_until_repeat = self.REPEAT_TICKS
+
+    def key_up(self):
+        '''Call this only once as the key comes back up.'''
+        self._down_code = None
 
     def tick_1mhz(self, ticks=1):
         self._tx.tick_1mhz(ticks)
 
-    @property
-    def busy(self):
-        return self._tx.busy
+        if (self._down_code is None) or (self._tx.busy):
+            return
 
-
-class MFSWBusyError(Exception):
-    """ Attempt to send another MFSW byte while a MFSW packet is still
-    being clocked out.  Callers should check the busy status before
-    calling send() with another keycode. """
-    pass
+        self._ticks_until_repeat -= ticks
+        if self._ticks_until_repeat <= 0:
+            self._tx.repeat()
+            self._ticks_until_repeat = self.REPEAT_TICKS
