@@ -200,13 +200,13 @@ class Emulator:
             self.upd.key_data[cmd['byte']] &= ~cmd['mask']
 
         elif action == 'mfsw':
-            import premium5.mfsw as mfsw
+            from premium5.mfsw import MFSW
             code = cmd.get('code')
             codes = {
-                'vol_down': mfsw.VOL_DOWN,
-                'vol_up': mfsw.VOL_UP,
-                'up': mfsw.UP,
-                'down': mfsw.DOWN,
+                'vol_down': MFSW.VOL_DOWN,
+                'vol_up': MFSW.VOL_UP,
+                'up': MFSW.UP,
+                'down': MFSW.DOWN,
             }
             if code in codes and not self.mfsw.busy:
                 self.mfsw.send(codes[code])

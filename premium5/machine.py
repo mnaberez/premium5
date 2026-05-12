@@ -2,7 +2,7 @@ from k0emu.i2c import StubI2CTarget
 from premium5.cdc import CDC
 from premium5.digital import Demux, Level
 from premium5.fis import FIS
-from premium5.mfsw import MFSWTransmitter
+from premium5.mfsw import MFSW
 from premium5.i2c import M24C04
 from premium5.mcu import UPD78F0831Y
 from premium5.spi import UPD16432B
@@ -75,7 +75,7 @@ class Machine:
         self.fis.ena_out.drives(self.mcu.p4.pins[5].input)
 
     def _init_mfsw(self):
-        self.mfsw = MFSWTransmitter()
+        self.mfsw = MFSW()
         self.ref_tick.add_listener(self.mfsw.tick_1mhz)
         self.mfsw.swc_out.inverted().drives(self.mcu.p0.pins[0].input)
 
