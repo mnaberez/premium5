@@ -28,14 +28,16 @@ class LogicOutputTests(unittest.TestCase):
         out.set_floating()
         self.assertTrue(out.floating)
 
-    def test_bind_pushes_current_state(self):
+    # drives()
+
+    def test_drives_pushes_current_state(self):
         out = LogicOutput()
         out.set_high()
         inp = LogicInput()
         out.drives(inp)
         self.assertTrue(inp.high)
 
-    def test_state_change_pushes_to_bound_input(self):
+    def test_drives_state_change_pushes_to_input(self):
         out = LogicOutput()
         inp = LogicInput()
         out.drives(inp)
@@ -44,7 +46,7 @@ class LogicOutputTests(unittest.TestCase):
         out.set_low()
         self.assertTrue(inp.low)
 
-    def test_no_push_when_state_unchanged(self):
+    def test_drives_no_push_when_state_unchanged(self):
         out = LogicOutput()
         inp = LogicInput()
         out.drives(inp)
@@ -53,6 +55,8 @@ class LogicOutputTests(unittest.TestCase):
         inp.on_rising(lambda: call_count.__setitem__(0, call_count[0] + 1))
         out.set_high()  # same state, should not push
         self.assertEqual(call_count[0], 0)
+
+    # set_level()
 
     def test_set_level_high(self):
         out = LogicOutput()
@@ -69,6 +73,15 @@ class LogicOutputTests(unittest.TestCase):
         out.set_level(Level.FLOATING)
         self.assertTrue(out.floating)
 
+    def test_set_level_pushes_to_driven_input(self):
+        out = LogicOutput()
+        inp = LogicInput()
+        out.drives(inp)
+        out.set_level(Level.HIGH)
+        self.assertTrue(inp.high)
+
+    # toggle()
+
     def test_toggle_from_low(self):
         out = LogicOutput(Level.LOW)
         out.toggle()
@@ -84,14 +97,7 @@ class LogicOutputTests(unittest.TestCase):
         out.toggle()
         self.assertTrue(out.floating)
 
-    def test_set_level_pushes_to_bound_input(self):
-        out = LogicOutput()
-        inp = LogicInput()
-        out.drives(inp)
-        out.set_level(Level.HIGH)
-        self.assertTrue(inp.high)
-
-    def test_bind_multiple_inputs(self):
+    def test_drives_multiple_inputs(self):
         out = LogicOutput()
         inp1 = LogicInput()
         inp2 = LogicInput()
@@ -101,14 +107,14 @@ class LogicOutputTests(unittest.TestCase):
         self.assertTrue(inp1.high)
         self.assertTrue(inp2.high)
 
-    def test_bind_same_input_twice_does_not_duplicate(self):
+    def test_drives_same_input_twice_does_not_duplicate(self):
         out = LogicOutput()
         inp = LogicInput()
         out.drives(inp)
         out.drives(inp)
         self.assertEqual(len(out._inputs), 1)
 
-    def test_bind_pushes_current_state_to_each(self):
+    def test_drives_pushes_current_state_to_each(self):
         out = LogicOutput()
         out.set_high()
         inp1 = LogicInput()
@@ -135,6 +141,8 @@ class LogicOutputTests(unittest.TestCase):
         result = out.drives(inp)
         self.assertIs(result, out)
 
+    # follower()
+
     def test_follower_returns_logic_input(self):
         out = LogicOutput()
 
@@ -157,6 +165,8 @@ class LogicOutputTests(unittest.TestCase):
         out.set_floating()
         self.assertTrue(follower.floating)
 
+    # inverted()
+
     def test_inverted_returns_logic_output(self):
         out = LogicOutput()
 
@@ -178,6 +188,22 @@ class LogicOutputTests(unittest.TestCase):
         inv = out.inverted()
         out.set_floating()
         self.assertTrue(inv.floating)
+
+    # set_level_from()
+
+    def test_set_level_from_truthy(self):
+        out = LogicOutput()
+        for truthy in (True, 1, 42):
+            out.set_low()
+            out.set_level_from(truthy)
+            self.assertTrue(out.high)
+
+    def test_set_level_from_falsy(self):
+        out = LogicOutput()
+        for falsy in (False, None, 0):
+            out.set_high()
+            out.set_level_from(falsy)
+            self.assertTrue(out.low)
 
 
 class LogicInputTests(unittest.TestCase):

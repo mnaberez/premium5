@@ -76,10 +76,8 @@ class UPD16432B(object):
     def _on_clk_falling(self):
         """Falling edge of CLK: shift out a bit if enabled"""
         if self.stb_in.high:
-            if (self._shift_out >> (7 - self._shift_count)) & 1:
-                self.dat_out.set_high()
-            else:
-                self.dat_out.set_low()
+            bit = (self._shift_out >> (7 - self._shift_count)) & 1
+            self.dat_out.set_level_from(bit)
 
     # callbacks: our internal ones called after a byte is received
 

@@ -121,10 +121,7 @@ class AsyncSerialTransmitter:
         if not self.transmitting:
             return
 
-        if self._shift & 1:
-            self._txd_out.set_high()
-        else:
-            self._txd_out.set_low()
+        self._txd_out.set_level_from(self._shift & 1)
 
         self._shift >>= 1
         self._bits_remaining -= 1

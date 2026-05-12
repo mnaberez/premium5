@@ -21,13 +21,6 @@ class LogicOutput(object):
 
     # set the level
 
-    def set_level(self, level):
-        if level != self._level:
-            self._level = level
-
-            for logic_input in self._inputs:
-                logic_input.notify(level)
-
     def set_high(self):
         self.set_level(Level.HIGH)
 
@@ -37,11 +30,30 @@ class LogicOutput(object):
     def set_floating(self):
         self.set_level(Level.FLOATING)
 
-    def toggle(self):
-        if self._level == Level.HIGH:
-            self.set_low()
-        elif self._level == Level.LOW:
+    def set_level(self, level):
+        """Set the level to one of the Level.* constants"""
+        if level != self._level:
+            self._level = level
+
+            for logic_input in self._inputs:
+                logic_input.notify(level)
+
+    def set_level_from(self, value):
+        """Set Level.HIGH if value is truthy, Level.LOW if falsy."""
+        if value:
             self.set_high()
+        else:
+            self.set_low()
+
+    # toggle (invert) the level
+
+    def toggle(self):
+        if self.high:
+            self.set_low()
+        elif self.low:
+            self.set_high()
+        elif self.floating:
+            pass # stays floating
 
     # interrogate the level
 

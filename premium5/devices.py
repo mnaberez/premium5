@@ -497,10 +497,7 @@ class SPIControllerDevice(BaseDevice):
         if self._bits_remaining == 0:
             return
 
-        if self._shift_out & 0x80:
-            self.dat_out.set_high()
-        else:
-            self.dat_out.set_low()
+        self.dat_out.set_level_from(self._shift_out & 0x80)
 
         self._shift_out = (self._shift_out << 1) & 0xFF
 
