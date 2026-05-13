@@ -26,7 +26,7 @@ class MFSW:
         # NECTransmitter is the opposite so its output is inverted
         self.swc_out = self._tx.data_out.inverted()
 
-        self._down_code = None
+        self._key_down = False
         self._ticks_until_repeat = self.REPEAT_TICKS
 
     def key_down(self, code):
@@ -34,18 +34,19 @@ class MFSW:
         must be one of the key code constants.  A command frame will
         be sent with the key code.  The key repeat will be handled
         on tick.'''
-        self._down_code = code
         self._tx.send(code)
+
+        self._key_down = True
         self._ticks_until_repeat = self.REPEAT_TICKS
 
     def key_up(self):
         '''Call this only once as the key comes back up.'''
-        self._down_code = None
+        self._key_down = False
 
     def tick_1mhz(self, ticks=1):
         self._tx.tick_1mhz(ticks)
 
-        if (self._down_code is None) or (self._tx.busy):
+        if (not self._key_down) or (self._tx.busy):
             return
 
         self._ticks_until_repeat -= ticks
