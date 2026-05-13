@@ -101,21 +101,23 @@ class EmulatorState {
         this.ac = data.ac;
         this.cy = data.cy;
 
-        // Disassembly and listing
-        this.disasmHistory = data.disasm_history;
-        this.disasmCurrent = data.disasm_current;
-        this.listingSlice = data.listing_slice;
-
-        // Faceplate hardware
-        this.displayPixels = EmulatorState._decodeHex(data.display_pixels);
-        this.activePictographs = EmulatorState._decodePictographs(data.pictograph_ram);
-        this.led = data.led;
-        this.fisDisplayPixels = EmulatorState._decodeHex(data.fis_display_pixels);
-
         // Memory dumps
         this.expRam = data.exp_ram;
         this.hsRam = data.hs_ram;
         this.eeprom = data.eeprom;
+
+        // Faceplate hardware
+        this.displayPixels = EmulatorState._decodeHex(data.upd_display_pixels);
+        this.activePictographs = EmulatorState._decodePictographs(data.upd_pictograph_ram);
+        this.led = data.alarm_led;
+
+        // FIS
+        this.fisDisplayPixels = EmulatorState._decodeHex(data.fis_display_pixels);
+
+        // Disassembly and listing
+        this.disasmHistory = data.disasm_history;
+        this.disasmCurrent = data.disasm_current;
+        this.listingSlice = data.listing_slice;
     }
 
     static _decodeHex(hexStr) {

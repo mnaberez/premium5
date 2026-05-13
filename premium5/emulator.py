@@ -81,9 +81,9 @@ class Emulator:
             hex_str = "%02x" % proc.bus.read(proc.pc)
             current = {'addr': proc.pc, 'hex': hex_str, 'inst': '???'}
 
-        display_pixels = bytes(self.upd.display_pixels).hex()
-        pictograph_ram = bytes(self.upd.pictograph_ram).hex()
-        led = self._alarm_led.low  # active low
+        upd_display_pixels = bytes(self.upd.display_pixels).hex()
+        upd_pictograph_ram = bytes(self.upd.pictograph_ram).hex()
+        alarm_led = self._alarm_led.low  # active low
 
         exp_ram = proc.bus.device("expansion_ram")._data
         hs_ram = proc.bus.device("high_speed_ram")._data
@@ -91,6 +91,10 @@ class Emulator:
 
         return {
             'running': self.running,
+            'real_mhz': self.governor.real_mhz,
+            'potential_mhz': self.governor.potential_mhz,
+            'total_cycles': proc.total_cycles,
+
             'pc': proc.pc,
             'sp': proc.read_sp(),
             'ax': proc.read_gp_regpair(RegisterPairs.AX),
@@ -104,21 +108,22 @@ class Emulator:
             'z': bool(psw & Flags.Z),
             'ac': bool(psw & Flags.AC),
             'cy': bool(psw & Flags.CY),
-            'total_cycles': proc.total_cycles,
-            'disasm_history': list(self._disasm_history),
-            'disasm_current': current,
-            'display_pixels': display_pixels,
-            'pictograph_ram': pictograph_ram,
-            'led': led,
-            'fis_display_pixels': bytes(self.fis.display_pixels).hex(),
-            'real_mhz': self.governor.real_mhz,
-            'potential_mhz': self.governor.potential_mhz,
+
             'exp_ram': bytes(exp_ram).hex(),
             'exp_ram_base': 0xF000,
             'hs_ram': bytes(hs_ram).hex(),
             'hs_ram_base': 0xFB00,
             'eeprom': bytes(eeprom).hex(),
             'eeprom_base': 0x0000,
+
+            'upd_display_pixels': upd_display_pixels,
+            'upd_pictograph_ram': upd_pictograph_ram,
+            'alarm_led': alarm_led,
+
+            'fis_display_pixels': bytes(self.fis.display_pixels).hex(),
+
+            'disasm_history': list(self._disasm_history),
+            'disasm_current': current,
             'listing_slice': self.get_listing_slice(),
         }
 
