@@ -309,7 +309,7 @@ REPEAT_SYMBOL = Symbol(
     space_ticks=2400,  # 2.4ms LOW     midpoint of firmware's 1.8- 3.0ms
 )
 
-# Timeout: If no more edges are received for this long, the packet is
-# over.  This is not derived from the firmware; it's a duration we
-# made up that is longer than the longest symbol.
+# Timeout: If no more edges are received for this long, abandon
+# the current frame.  This is not derived from the firmware; it's
+# a duration we made up that is longer than the longest symbol.
 TIMEOUT_TICKS = START_SYMBOL.mark_ticks + START_SYMBOL.space_ticks + 1000
