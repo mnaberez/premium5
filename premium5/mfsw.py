@@ -10,8 +10,8 @@ class MFSW:
     # Key codes
     VOL_DOWN = 0x00
     VOL_UP   = 0x01
-    UP       = 0x0A
-    DOWN     = 0x0B
+    DOWN     = 0x0A
+    UP       = 0x0B
 
     # Repeat interval.  The radio's firmware accepts a repeat frame
     # up to 155ms after a command frame and up to 210ms after a

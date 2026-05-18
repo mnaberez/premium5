@@ -1,8 +1,8 @@
 class MFSW {
     static VOL_DOWN = 0x00;
     static VOL_UP   = 0x01;
-    static UP       = 0x0A;
-    static DOWN     = 0x0B;
+    static DOWN     = 0x0A;
+    static UP       = 0x0B;
 
     constructor(container) {
         this.onButtonDown = null;

@@ -25,26 +25,26 @@ class MFSWTests(unittest.TestCase):
 
     # sending each key
 
-    def test_sends_vol_up(self):
-        self.tx.key_down(MFSW.VOL_UP)
-        self._tick(1_000_000)
-        self.assertEqual(self.commands, [0x01])
-        self.assertTrue(self.tx.swc_out.high) # idle
-
     def test_sends_vol_down(self):
         self.tx.key_down(MFSW.VOL_DOWN)
         self._tick(1_000_000)
         self.assertEqual(self.commands, [0x00])
         self.assertTrue(self.tx.swc_out.high) # idle
 
-    def test_sends_up(self):
-        self.tx.key_down(MFSW.UP)
+    def test_sends_vol_up(self):
+        self.tx.key_down(MFSW.VOL_UP)
         self._tick(1_000_000)
-        self.assertEqual(self.commands, [0x0A])
+        self.assertEqual(self.commands, [0x01])
         self.assertTrue(self.tx.swc_out.high) # idle
 
     def test_sends_down(self):
         self.tx.key_down(MFSW.DOWN)
+        self._tick(1_000_000)
+        self.assertEqual(self.commands, [0x0A])
+        self.assertTrue(self.tx.swc_out.high) # idle
+
+    def test_sends_up(self):
+        self.tx.key_down(MFSW.UP)
         self._tick(1_000_000)
         self.assertEqual(self.commands, [0x0B])
         self.assertTrue(self.tx.swc_out.high) # idle
@@ -52,11 +52,11 @@ class MFSWTests(unittest.TestCase):
     # consecutive, non-repeating keys
 
     def test_back_to_back_keys(self):
-        self.tx.key_down(MFSW.UP)
+        self.tx.key_down(MFSW.DOWN)
         self._tick(MFSW.REPEAT_TICKS - 1)
         self.tx.key_up()
 
-        self.tx.key_down(MFSW.DOWN)
+        self.tx.key_down(MFSW.UP)
         self._tick(MFSW.REPEAT_TICKS - 1)
         self.tx.key_up()
 
@@ -67,7 +67,7 @@ class MFSWTests(unittest.TestCase):
 
     def test_repeat_lifecycle(self):
         # key down sends command frame
-        self.tx.key_down(MFSW.UP)
+        self.tx.key_down(MFSW.DOWN)
         self._tick(MFSW.REPEAT_TICKS)
         self.assertEqual(self.commands, [0x0A])
         self.assertEqual(len(self.repeats), 0)
