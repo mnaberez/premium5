@@ -41,6 +41,8 @@ A firmware binary is required.  One can be built, byte-for-byte identical to the
 
 For more options, run `premium5` with no arguments.
 
+When the radio powers up, it prompts for the SAFE code by displaying `1000`.  The preset buttons `1` through `4` are used to toggle in the code.  The default EEPROM data has `1000` as the SAFE code, so no toggling is needed.  Hold down `SEEK >` or `TUNE >` for a couple seconds to unlock the radio.
+
 ## Author                                                                                          
 
 [Mike Naberezny](https://github.com/mnaberez)

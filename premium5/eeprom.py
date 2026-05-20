@@ -29,7 +29,55 @@ def populate(proc):
     i2c = proc.bus.device("iic0")
     eeprom_data = i2c._targets[0x50]._data
     eeprom_data[:len(DUMP)] = DUMP
+    _set_coding(eeprom_data, 437) # Monsoon
+    _set_safe_code(eeprom_data, 1000)
     _fix_checksums(eeprom_data)
+
+
+def _set_safe_code(data, code):
+    """Set the SAFE code from a 4-digit decimal number.  Any code
+    0000-1999 is possible, however only 0000-1999 have been seen
+    in the wild.
+
+    The code is stored as two packed BCD bytes at EEPROM 0x14-0x15.
+    For example, code 0872 is stored as 0x14=0x08, 0x15=0x72.
+    """
+    data[0x14] = ((code // 1000) << 4) | ((code // 100) % 10)
+    data[0x15] = (((code // 10) % 10) << 4) | (code % 10)
+
+
+def _set_coding(data, coding):
+    """Set the soft coding from a decimal number (e.g. 437).
+
+    The coding is a 4-digit decimal number where each digit
+    controls a feature group:
+
+      Thousands  = car model (0=generic, 1=Golf/GTI, 6=Beetle)
+      Hundreds   = speakers (0=front+rear, 4=none)
+      Tens       = amplifier (0=none, 3=Monsoon, 4=Monsoon variant)
+      Ones       = features bitfield (1=antenna, 2=CDC, 4=FIS)
+
+    Example: 437 = car model 0, speakers 4, Monsoon 3, features 7
+
+    The firmware stores coding*2 as a 16-bit value at 0x58-0x59,
+    and the individual BCD digits at 0x5C-0x60.
+    """
+    ones      = (coding      ) % 10
+    tens      = (coding // 10) % 10
+    hundreds  = (coding // 100) % 10
+    thousands = (coding // 1000) % 10
+
+    # 16-bit binary: coding * 2, big-endian
+    binary = coding * 2
+    data[0x58] = (binary >> 8) & 0xFF
+    data[0x59] = binary & 0xFF
+
+    # individual BCD digits
+    data[0x5C] = ones
+    data[0x5D] = tens
+    data[0x5E] = hundreds
+    data[0x5F] = thousands
+    data[0x60] = 0
 
 
 def _fix_checksums(data):
