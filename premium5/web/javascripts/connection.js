@@ -56,6 +56,8 @@ class Connection {
             this._send('upd_key_down', {byte: buttonCode.upd_byte, mask: buttonCode.upd_mask});
         } else if (buttonCode.name === 'power') {
             this._send('power_key');
+        } else if (buttonCode.type === 'vol') {
+            this._send(buttonCode.name);
         }
     }
 
@@ -170,6 +172,10 @@ class ButtonCode {
     // GPIO buttons (directly wired, not scanned by uPD16432B)
     static POWER      = new ButtonCode('power',      'gpio');
     static STOP_EJECT = new ButtonCode('stop_eject', 'gpio');
+
+    // Volume knob (rotary encoder)
+    static VOL_DOWN   = new ButtonCode('vol_down',   'vol');
+    static VOL_UP     = new ButtonCode('vol_up',     'vol');
 
     constructor(name, type, options = {}) {
         this.name = name;

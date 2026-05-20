@@ -214,12 +214,14 @@ class Faceplate {
         this._addButton(612, 245, 111, 51,  ButtonCode.PRESET_5);
         this._addButton(728, 245, 112, 51,  ButtonCode.PRESET_6);
         this._addButton(898, 245, 75,  51,  ButtonCode.MIX);
+
         // Non-uPD16432B buttons
         this._addButton(14,  245, 77,  51,  ButtonCode.POWER);
         this._addButton(241, 45,  68,  69,  ButtonCode.STOP_EJECT);
+        this._addButton(65,  39,  47,  94,  ButtonCode.VOL_DOWN);
+        this._addButton(117, 39,  55,  94,  ButtonCode.VOL_UP);
 
         // Non-interactive regions
-        this._addButton(79,  39,  83,  94,  null);  // volume knob
         this._addButton(406, 45,  343, 71,  null);  // cassette slot
 
         this.disable();

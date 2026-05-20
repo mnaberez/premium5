@@ -7,6 +7,7 @@ from premium5.i2c import M24C04
 from premium5.mcu import UPD78F0831Y
 from premium5.spi import UPD16432B
 from premium5.timing import ReferenceTick
+from premium5.volume import VolumeKnob
 
 class Machine:
     """The Premium 5 radio board: MCU + external devices."""
@@ -15,13 +16,14 @@ class Machine:
         self.mcu = UPD78F0831Y()
         self.ref_tick = ReferenceTick(system_clock_hz)
 
-        self._init_pin_drivers()
+        self._init_forced_pins()
         self._init_i2c_targets()
         self._init_upd16432b_and_fis()
+        self._init_volume_knob()
         self._init_mfsw()
         self._init_cdc()
 
-    def _init_pin_drivers(self):
+    def _init_forced_pins(self):
         # P0.1/INTP1: firmware checks this pin during power-on.
         # Must be HIGH or the power-on sequence fails.
         self.mcu.p0.pins[1].input.stuck(Level.HIGH)
@@ -73,6 +75,14 @@ class Machine:
         dat_demux.output_b.drives(self.fis.dat_in)
         self.mcu.p4.pins[4].output.drives(self.fis.ena_in)
         self.fis.ena_out.drives(self.mcu.p4.pins[5].input)
+
+    def _init_volume_knob(self):
+        self.volume_knob = VolumeKnob()
+        self.ref_tick.add_listener(self.volume_knob.tick_1mhz)
+
+        # P4.0 = encoder phase A, P4.1 = encoder phase B
+        self.volume_knob.phase_a_out.drives(self.mcu.p4.pins[0].input)
+        self.volume_knob.phase_b_out.drives(self.mcu.p4.pins[1].input)
 
     def _init_mfsw(self):
         self.mfsw = MFSW()

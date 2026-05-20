@@ -50,6 +50,7 @@ class Emulator:
         populate(self.proc)
 
         self.proc.bus.reset()
+        self.volume_knob = machine.volume_knob
         self.upd = machine.upd
         self.fis = machine.fis
         self.mfsw = machine.mfsw
@@ -209,6 +210,12 @@ class Emulator:
 
         elif action == 'mfsw_key_up':
             self.mfsw.key_up()
+
+        elif action == 'vol_up':
+            self.volume_knob.up()
+
+        elif action == 'vol_down':
+            self.volume_knob.down()
 
 
 def emulator_thread(emulator):
